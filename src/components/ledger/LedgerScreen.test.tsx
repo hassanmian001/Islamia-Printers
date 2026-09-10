@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import LedgerScreen from "./LedgerScreen";
@@ -10,11 +10,14 @@ import type { LedgerApi, LedgerStatementDto, LedgerSummaryDto } from "@/types/st
 
 const summary: LedgerSummaryDto = {
   customers: [
-    { partyType: "customer", partyId: 1, partyName: "Ali", phone: "0300-1112222", invoicedCents: 10_000, paidCents: 4_000, returnedCents: 0, balanceCents: 6_000 },
-    { partyType: "customer", partyId: 2, partyName: "Settled Sohail", phone: null, invoicedCents: 5_000, paidCents: 5_000, returnedCents: 0, balanceCents: 0 },
+    { partyType: "customer", partyId: 1, partyName: "Ali", phone: "0300-1112222", openingBalanceCents: 0, invoicedCents: 10_000, paidCents: 4_000, returnedCents: 0, balanceCents: 6_000 },
+    { partyType: "customer", partyId: 2, partyName: "Settled Sohail", phone: null, openingBalanceCents: 0, invoicedCents: 5_000, paidCents: 5_000, returnedCents: 0, balanceCents: 0 },
+    { partyType: "customer", partyId: 3, partyName: "Old Khata Kamran", phone: null, openingBalanceCents: 30_000, invoicedCents: 0, paidCents: 0, returnedCents: 0, balanceCents: 30_000 },
   ],
-  suppliers: [{ partyType: "supplier", partyId: 9, partyName: "Fabric House", phone: null, invoicedCents: 20_000, paidCents: 12_000, returnedCents: 0, balanceCents: 8_000 }],
-  customerReceivableCents: 6_000,
+  suppliers: [
+    { partyType: "supplier", partyId: 9, partyName: "Fabric House", phone: null, openingBalanceCents: 0, invoicedCents: 20_000, paidCents: 12_000, returnedCents: 0, balanceCents: 8_000 },
+  ],
+  customerReceivableCents: 36_000,
   supplierPayableCents: 8_000,
 };
 
@@ -44,23 +47,32 @@ describe("LedgerScreen", () => {
     window.stylecraft = { ledger: ledgerApi } as unknown as typeof window.stylecraft;
   });
 
-  it("lists customers who still owe money and hides settled accounts", async () => {
+  it("lists every customer, settled ones included, so nobody goes missing", async () => {
     render(<LedgerScreen />);
 
     expect(await screen.findByText("Ali")).toBeInTheDocument();
-    expect(screen.queryByText("Settled Sohail")).not.toBeInTheDocument();
-    // The same amount appears in the receivable total and on Ali's row.
-    expect(screen.getAllByText("Rs. 60.00")).toHaveLength(2);
+    expect(screen.getByText("Settled Sohail")).toBeInTheDocument();
     expect(screen.getByText("Total receivable")).toBeInTheDocument();
   });
 
-  it("shows settled accounts once asked for", async () => {
+  it("hides settled accounts once the tick is taken off", async () => {
     render(<LedgerScreen />);
 
     await screen.findByText("Ali");
     fireEvent.click(screen.getByLabelText("Show settled accounts"));
 
-    expect(await screen.findByText("Settled Sohail")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("Settled Sohail")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Ali")).toBeInTheDocument();
+  });
+
+  it("carries an opening balance into what a customer owes", async () => {
+    render(<LedgerScreen />);
+
+    const row = (await screen.findByText("Old Khata Kamran")).closest("tr");
+    // The opening figure and the balance it produces both read Rs. 300.00.
+    expect(within(row as HTMLTableRowElement).getAllByText("Rs. 300.00")).toHaveLength(2);
   });
 
   it("switches to what the shop owes suppliers", async () => {

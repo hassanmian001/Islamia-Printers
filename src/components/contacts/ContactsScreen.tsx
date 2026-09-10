@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { formatCurrency } from "@/lib/currency";
 import type { ContactDto, ContactInput } from "@/types/stylecraft-api";
 
 type ContactKind = "customers" | "suppliers";
@@ -11,7 +12,18 @@ type ContactFormState = {
   email: string;
   address: string;
   notes: string;
+  openingBalance: string;
 };
+
+function decimalStringToCents(value: string) {
+  const amount = Number(value);
+
+  if (!Number.isFinite(amount)) {
+    return Number.NaN;
+  }
+
+  return Math.round(amount * 100);
+}
 
 function makeEmptyForm(): ContactFormState {
   return {
@@ -20,6 +32,7 @@ function makeEmptyForm(): ContactFormState {
     email: "",
     address: "",
     notes: "",
+    openingBalance: "",
   };
 }
 
@@ -30,6 +43,7 @@ function toFormState(contact: ContactDto): ContactFormState {
     email: contact.email ?? "",
     address: contact.address ?? "",
     notes: contact.notes ?? "",
+    openingBalance: contact.openingBalanceCents === 0 ? "" : (contact.openingBalanceCents / 100).toFixed(2),
   };
 }
 
@@ -40,6 +54,12 @@ function buildContactInput(form: ContactFormState): { input?: ContactInput; erro
     return { error: "Contact name is required." };
   }
 
+  const openingBalanceCents = form.openingBalance.trim() ? decimalStringToCents(form.openingBalance) : 0;
+
+  if (!Number.isInteger(openingBalanceCents)) {
+    return { error: "Opening balance must be an amount." };
+  }
+
   return {
     input: {
       name,
@@ -47,6 +67,7 @@ function buildContactInput(form: ContactFormState): { input?: ContactInput; erro
       email: form.email.trim() || null,
       address: form.address.trim() || null,
       notes: form.notes.trim() || null,
+      openingBalanceCents,
     },
   };
 }
@@ -230,6 +251,24 @@ export default function ContactsScreen() {
               value={form.address}
             />
           </label>
+
+          <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="contact-opening-balance">
+            Opening balance
+            <input
+              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              id="contact-opening-balance"
+              onChange={(event) => setForm((current) => ({ ...current, openingBalance: event.target.value }))}
+              placeholder="0.00"
+              step="0.01"
+              type="number"
+              value={form.openingBalance}
+            />
+            <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
+              {activeKind === "customers"
+                ? "Old udhaar this customer already owed before this software. Use a minus figure for money paid in advance."
+                : "What the shop already owed this supplier before this software. Use a minus figure for an advance already paid."}
+            </span>
+          </label>
         </div>
 
         <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="contact-notes">
@@ -274,6 +313,7 @@ export default function ContactsScreen() {
                 <th className="px-4 py-3 font-semibold">Phone</th>
                 <th className="px-4 py-3 font-semibold">Email</th>
                 <th className="px-4 py-3 font-semibold">Address</th>
+                <th className="px-4 py-3 font-semibold">Opening</th>
                 <th className="px-4 py-3 font-semibold">Notes</th>
                 <th className="px-4 py-3 font-semibold">Actions</th>
               </tr>
@@ -281,13 +321,13 @@ export default function ContactsScreen() {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
               {isLoading ? (
                 <tr>
-                  <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={6}>
+                  <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={7}>
                     Loading contacts...
                   </td>
                 </tr>
               ) : filteredContacts.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={6}>
+                  <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={7}>
                     No {activeKind} found.
                   </td>
                 </tr>
@@ -298,6 +338,9 @@ export default function ContactsScreen() {
                     <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{contact.phone ?? "-"}</td>
                     <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{contact.email ?? "-"}</td>
                     <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{contact.address ?? "-"}</td>
+                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">
+                      {contact.openingBalanceCents === 0 ? "-" : formatCurrency(contact.openingBalanceCents)}
+                    </td>
                     <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{contact.notes ?? "-"}</td>
                     <td className="px-4 py-4">
                       <Button onClick={() => startEditing(contact)} type="button" variant="ghost">

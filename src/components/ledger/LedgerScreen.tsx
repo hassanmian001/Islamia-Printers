@@ -26,6 +26,7 @@ function parseAmountToCents(value: string) {
 }
 
 const entryLabels: Record<LedgerStatementDto["entries"][number]["kind"], string> = {
+  opening: "Opening balance",
   sale: "Sale",
   purchase: "Purchase",
   payment: "Payment",
@@ -38,7 +39,7 @@ export default function LedgerScreen() {
   const [summary, setSummary] = useState<LedgerSummaryDto | null>(null);
   const [statement, setStatement] = useState<LedgerStatementDto | null>(null);
   const [selectedPartyId, setSelectedPartyId] = useState<number | null>(null);
-  const [showSettled, setShowSettled] = useState(false);
+  const [showSettled, setShowSettled] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isWorking, setIsWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -130,7 +131,8 @@ export default function LedgerScreen() {
         <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Khata</p>
         <h2 className="mt-1 text-3xl font-bold tracking-tight">Ledger</h2>
         <p className="mt-2 max-w-2xl text-slate-600 dark:text-slate-300">
-          Every unpaid sale and purchase, and every payment against it. A balance is invoices minus payments minus returns.
+          Every unpaid sale and purchase, and every payment against it. A balance is the opening balance plus invoices, minus payments and returns. Old udhaar
+          from before this software is entered as an opening balance on the contact.
         </p>
       </div>
 
@@ -164,6 +166,7 @@ export default function LedgerScreen() {
             <thead className="bg-slate-50 dark:bg-slate-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
               <tr>
                 <th className="px-4 py-3 font-semibold">{partyType === "customer" ? "Customer" : "Supplier"}</th>
+                <th className="px-4 py-3 font-semibold">Opening</th>
                 <th className="px-4 py-3 font-semibold">Invoiced</th>
                 <th className="px-4 py-3 font-semibold">Paid</th>
                 <th className="px-4 py-3 font-semibold">Returned</th>
@@ -173,13 +176,13 @@ export default function LedgerScreen() {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
               {isLoading ? (
                 <tr>
-                  <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={5}>
+                  <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={6}>
                     Loading ledger...
                   </td>
                 </tr>
               ) : visibleRows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={5}>
+                  <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={6}>
                     {rows.length === 0 ? "No accounts yet." : "Nothing outstanding — every account is settled."}
                   </td>
                 </tr>
@@ -194,6 +197,7 @@ export default function LedgerScreen() {
                       <div className="font-semibold text-slate-950 dark:text-slate-50">{row.partyName}</div>
                       {row.phone ? <div className="text-xs text-slate-500 dark:text-slate-400">{row.phone}</div> : null}
                     </td>
+                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{row.openingBalanceCents === 0 ? "-" : formatCurrency(row.openingBalanceCents)}</td>
                     <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{formatCurrency(row.invoicedCents)}</td>
                     <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{formatCurrency(row.paidCents)}</td>
                     <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{formatCurrency(row.returnedCents)}</td>

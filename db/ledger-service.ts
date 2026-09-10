@@ -34,7 +34,7 @@ export type PaymentDto = {
  */
 export type LedgerEntryDto = {
   date: Date;
-  kind: "sale" | "purchase" | "payment" | "sale_return" | "purchase_return";
+  kind: "opening" | "sale" | "purchase" | "payment" | "sale_return" | "purchase_return";
   reference: string;
   description: string;
   debitCents: number;
@@ -47,6 +47,7 @@ export type LedgerPartySummaryDto = {
   partyId: number;
   partyName: string;
   phone: string | null;
+  openingBalanceCents: number;
   invoicedCents: number;
   paidCents: number;
   returnedCents: number;
@@ -142,10 +143,11 @@ function customerSummaries(db: Db): LedgerPartySummaryDto[] {
       partyId: customer.id,
       partyName: customer.name,
       phone: customer.phone,
+      openingBalanceCents: customer.openingBalanceCents,
       invoicedCents,
       paidCents,
       returnedCents,
-      balanceCents: invoicedCents - paidCents - returnedCents,
+      balanceCents: customer.openingBalanceCents + invoicedCents - paidCents - returnedCents,
     };
   });
 }
@@ -181,10 +183,11 @@ function supplierSummaries(db: Db): LedgerPartySummaryDto[] {
       partyId: supplier.id,
       partyName: supplier.name,
       phone: supplier.phone,
+      openingBalanceCents: supplier.openingBalanceCents,
       invoicedCents,
       paidCents,
       returnedCents,
-      balanceCents: invoicedCents - paidCents - returnedCents,
+      balanceCents: supplier.openingBalanceCents + invoicedCents - paidCents - returnedCents,
     };
   });
 }
@@ -208,14 +211,35 @@ export function getLedgerSummary(databasePath?: string): LedgerSummaryDto {
   }
 }
 
-function buildEntries(rows: Omit<LedgerEntryDto, "balanceCents">[]): LedgerEntryDto[] {
+/**
+ * Turns the loose rows into a running khata. The opening balance is always the
+ * first line, whatever its date, because everything after it is measured from
+ * there.
+ */
+function buildEntries(openingBalanceCents: number, openingDate: Date, rows: Omit<LedgerEntryDto, "balanceCents">[]): LedgerEntryDto[] {
   const sorted = [...rows].sort((left, right) => left.date.getTime() - right.date.getTime());
+  const entries: LedgerEntryDto[] = [];
   let balanceCents = 0;
 
-  return sorted.map((row) => {
+  if (openingBalanceCents !== 0) {
+    balanceCents = openingBalanceCents;
+    entries.push({
+      date: openingDate,
+      kind: "opening",
+      reference: "Opening",
+      description: "Balance carried over from before",
+      debitCents: Math.max(openingBalanceCents, 0),
+      creditCents: Math.max(-openingBalanceCents, 0),
+      balanceCents,
+    });
+  }
+
+  for (const row of sorted) {
     balanceCents += row.debitCents - row.creditCents;
-    return { ...row, balanceCents };
-  });
+    entries.push({ ...row, balanceCents });
+  }
+
+  return entries;
 }
 
 export function getLedgerStatement(databasePath: string | undefined, partyType: LedgerPartyType, partyId: number): LedgerStatementDto {
@@ -303,7 +327,12 @@ export function getLedgerStatement(databasePath: string | undefined, partyType: 
       });
     }
 
-    return { ...summary, entries: buildEntries(rows) };
+    const party =
+      partyType === "customer"
+        ? db.select({ createdAt: customers.createdAt }).from(customers).where(eq(customers.id, partyId)).get()
+        : db.select({ createdAt: suppliers.createdAt }).from(suppliers).where(eq(suppliers.id, partyId)).get();
+
+    return { ...summary, entries: buildEntries(summary.openingBalanceCents, party?.createdAt ?? new Date(0), rows) };
   } finally {
     sqlite.close();
   }

@@ -199,6 +199,8 @@ export type ContactInput = {
   email?: string | null;
   address?: string | null;
   notes?: string | null;
+  /** What the party already owed before any invoice here. Negative is money held in advance. */
+  openingBalanceCents?: number;
 };
 
 export type ContactListFilters = {
@@ -207,6 +209,7 @@ export type ContactListFilters = {
 
 export type ContactDto = ContactInput & {
   id: number;
+  openingBalanceCents: number;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -641,7 +644,7 @@ export type PaymentDto = {
 
 export type LedgerEntryDto = {
   date: Date;
-  kind: "sale" | "purchase" | "payment" | "sale_return" | "purchase_return";
+  kind: "opening" | "sale" | "purchase" | "payment" | "sale_return" | "purchase_return";
   reference: string;
   description: string;
   debitCents: number;
@@ -654,6 +657,7 @@ export type LedgerPartySummaryDto = {
   partyId: number;
   partyName: string;
   phone: string | null;
+  openingBalanceCents: number;
   invoicedCents: number;
   paidCents: number;
   returnedCents: number;

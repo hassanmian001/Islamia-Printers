@@ -54,10 +54,11 @@ Stock is held per size and colour, sales and purchases can be left part paid and
 ## Ledger
 
 - Customer khata: what each customer still owes, and supplier khata: what the shop still owes each supplier.
-- A balance is invoices minus payments minus returns, so nothing is counted twice.
-- Click a party to see a running statement of every invoice, payment and return against them.
+- A balance is the opening balance plus invoices, minus payments and returns, so nothing is counted twice.
+- Udhaar from before this software is entered as an opening balance on the customer or supplier, and starts their khata.
+- Click a party to see a running statement, opening balance first, then every invoice, payment and return against them.
 - Record a payment received or paid against an open balance.
-- Settled accounts are hidden until asked for.
+- Every account is listed, settled ones included, until the tick is taken off.
 
 ## Reports
 

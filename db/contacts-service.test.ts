@@ -64,6 +64,23 @@ describe("contacts service", () => {
     expect(listSuppliers(databasePath, { search: "021" }).map((listedSupplier) => listedSupplier.name)).toEqual(["Thread Mart"]);
   });
 
+  it("carries an old khata balance in and lets it be corrected later", () => {
+    const databasePath = makeTempDatabasePath();
+    const customer = createCustomer(databasePath, makeContactInput({ name: "Kamran", openingBalanceCents: 30_000 }));
+
+    expect(customer.openingBalanceCents).toBe(30_000);
+    expect(updateCustomer(databasePath, customer.id, makeContactInput({ name: "Kamran", openingBalanceCents: 25_000 })).openingBalanceCents).toBe(25_000);
+    expect(listCustomers(databasePath)[0].openingBalanceCents).toBe(25_000);
+  });
+
+  it("starts contacts at a zero opening balance and refuses a part-paisa figure", () => {
+    const databasePath = makeTempDatabasePath();
+
+    expect(createCustomer(databasePath, makeContactInput({ name: "Walk-in" })).openingBalanceCents).toBe(0);
+    expect(createSupplier(databasePath, makeContactInput({ name: "Thread Mart" })).openingBalanceCents).toBe(0);
+    expect(() => createCustomer(databasePath, makeContactInput({ name: "Broken", openingBalanceCents: 10.5 }))).toThrow(ContactValidationError);
+  });
+
   it("updates customers and rejects invalid inputs", () => {
     const databasePath = makeTempDatabasePath();
     const customer = createCustomer(databasePath, makeContactInput({ name: "Walk-in Customer" }));

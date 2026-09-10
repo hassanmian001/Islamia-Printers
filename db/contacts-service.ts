@@ -10,6 +10,8 @@ export type ContactInput = {
   email?: string | null;
   address?: string | null;
   notes?: string | null;
+  /** What the party already owed before any invoice here. Negative is money held in advance. */
+  openingBalanceCents?: number;
 };
 
 export type ContactListFilters = {
@@ -18,6 +20,7 @@ export type ContactListFilters = {
 
 export type ContactDto = ContactInput & {
   id: number;
+  openingBalanceCents: number;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -40,12 +43,21 @@ function normalizeContactInput(input: ContactInput) {
     throw new ContactValidationError("Contact name is required.");
   }
 
+  const openingBalanceCents = input.openingBalanceCents ?? 0;
+
+  // A shop that already keeps a khata on paper needs to carry that figure in,
+  // so this is allowed to be negative (an advance) as well as positive.
+  if (!Number.isInteger(openingBalanceCents)) {
+    throw new ContactValidationError("Opening balance must be an amount.");
+  }
+
   return {
     name,
     phone: nullableTrimmed(input.phone),
     email: nullableTrimmed(input.email),
     address: nullableTrimmed(input.address),
     notes: nullableTrimmed(input.notes),
+    openingBalanceCents,
   };
 }
 
@@ -75,6 +87,7 @@ function toSupplierDto(row: typeof suppliers.$inferSelect): ContactDto {
     email: row.email,
     address: row.address,
     notes: row.notes,
+    openingBalanceCents: row.openingBalanceCents,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -88,6 +101,7 @@ function toCustomerDto(row: typeof customers.$inferSelect): ContactDto {
     email: row.email,
     address: row.address,
     notes: row.notes,
+    openingBalanceCents: row.openingBalanceCents,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

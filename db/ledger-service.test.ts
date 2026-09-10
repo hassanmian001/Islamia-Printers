@@ -9,6 +9,7 @@ import { createProduct } from "./products-service";
 import { createPurchase, createSupplier } from "./purchases-service";
 import { createSaleReturn } from "./returns-service";
 import { createCustomer, createSale } from "./sales-service";
+import { createCustomer as createContactCustomer, createSupplier as createContactSupplier } from "./contacts-service";
 
 const tempDirs: string[] = [];
 
@@ -159,6 +160,76 @@ describe("ledger service", () => {
     });
 
     expect(getLedgerSummary(databasePath).supplierPayableCents).toBe(0);
+  });
+
+  it("starts a customer's khata from the balance they were carried in with", () => {
+    const databasePath = makeTempDatabasePath();
+    const product = makeProduct(databasePath);
+    const customer = createContactCustomer(databasePath, { name: "Kamran", openingBalanceCents: 30_000 });
+
+    createSale(databasePath, {
+      customerId: customer.id,
+      saleDate: new Date("2026-08-01T00:00:00.000Z"),
+      amountPaidCents: 0,
+      items: [{ variantId: product.variants[0].id, quantity: 1, unitPriceCents: 2_000 }],
+    });
+
+    const summary = getLedgerSummary(databasePath);
+    expect(summary.customers[0]).toMatchObject({ openingBalanceCents: 30_000, invoicedCents: 2_000, balanceCents: 32_000 });
+    expect(summary.customerReceivableCents).toBe(32_000);
+  });
+
+  it("puts the opening balance first in the statement, whatever the dates say", () => {
+    const databasePath = makeTempDatabasePath();
+    const product = makeProduct(databasePath);
+    const customer = createContactCustomer(databasePath, { name: "Kamran", openingBalanceCents: 30_000 });
+
+    createSale(databasePath, {
+      customerId: customer.id,
+      // Dated before the customer was entered, so date order alone would put it first.
+      saleDate: new Date("2020-01-01T00:00:00.000Z"),
+      amountPaidCents: 0,
+      items: [{ variantId: product.variants[0].id, quantity: 1, unitPriceCents: 2_000 }],
+    });
+
+    const statement = getLedgerStatement(databasePath, "customer", customer.id);
+    expect(statement.entries.map((entry) => [entry.kind, entry.debitCents, entry.balanceCents])).toEqual([
+      ["opening", 30_000, 30_000],
+      ["sale", 2_000, 32_000],
+    ]);
+  });
+
+  it("treats a negative opening balance as money already held in advance", () => {
+    const databasePath = makeTempDatabasePath();
+    const customer = createContactCustomer(databasePath, { name: "Kamran", openingBalanceCents: -5_000 });
+
+    const statement = getLedgerStatement(databasePath, "customer", customer.id);
+    expect(statement.balanceCents).toBe(-5_000);
+    expect(statement.entries[0]).toMatchObject({ kind: "opening", debitCents: 0, creditCents: 5_000 });
+  });
+
+  it("clears a carried-over balance once the customer pays it", () => {
+    const databasePath = makeTempDatabasePath();
+    const customer = createContactCustomer(databasePath, { name: "Kamran", openingBalanceCents: 30_000 });
+
+    recordPayment(databasePath, {
+      partyType: "customer",
+      partyId: customer.id,
+      amountCents: 30_000,
+      paymentDate: new Date("2026-08-10T00:00:00.000Z"),
+      method: "Cash",
+    });
+
+    expect(getLedgerSummary(databasePath).customers[0].balanceCents).toBe(0);
+  });
+
+  it("carries an opening balance for a supplier too", () => {
+    const databasePath = makeTempDatabasePath();
+    const supplier = createContactSupplier(databasePath, { name: "Fabric House", openingBalanceCents: 12_000 });
+
+    const summary = getLedgerSummary(databasePath);
+    expect(summary.suppliers[0]).toMatchObject({ openingBalanceCents: 12_000, balanceCents: 12_000 });
+    expect(summary.supplierPayableCents).toBe(12_000);
   });
 
   it("rejects payments with no amount or an unknown party", () => {

@@ -16,6 +16,7 @@ const sampleCustomers: ContactDto[] = [
     email: "ali@example.com",
     address: "Lahore",
     notes: "Repeat buyer",
+    openingBalanceCents: 25_000,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   },
@@ -26,6 +27,7 @@ const sampleCustomers: ContactDto[] = [
     email: "sara@example.com",
     address: null,
     notes: "Wholesale",
+    openingBalanceCents: 0,
     createdAt: new Date("2026-01-02T00:00:00.000Z"),
     updatedAt: new Date("2026-01-02T00:00:00.000Z"),
   },
@@ -39,6 +41,7 @@ const sampleSuppliers: ContactDto[] = [
     email: "fabric@example.com",
     address: "Karachi",
     notes: null,
+    openingBalanceCents: 0,
     createdAt: new Date("2026-01-03T00:00:00.000Z"),
     updatedAt: new Date("2026-01-03T00:00:00.000Z"),
   },
@@ -104,6 +107,7 @@ describe("ContactsScreen", () => {
         email: null,
         address: "Sialkot",
         notes: null,
+        openingBalanceCents: 0,
       });
     });
   });
@@ -128,7 +132,32 @@ describe("ContactsScreen", () => {
         email: "fabric@example.com",
         address: "Karachi",
         notes: null,
+        openingBalanceCents: 0,
       });
     });
+  });
+
+  it("carries an old khata balance in as an opening balance", async () => {
+    render(<ContactsScreen />);
+
+    await screen.findByText("Ali Khan");
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Nadeem Cloth" } });
+    fireEvent.change(screen.getByLabelText(/^Opening balance/), { target: { value: "1250.50" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add customer" }));
+
+    await waitFor(() => {
+      expect(contactsApi.createCustomer).toHaveBeenCalledWith(expect.objectContaining({ name: "Nadeem Cloth", openingBalanceCents: 125_050 }));
+    });
+  });
+
+  it("shows the opening balance a customer was carried in with, ready to edit", async () => {
+    render(<ContactsScreen />);
+
+    const row = (await screen.findByText("Ali Khan")).closest("tr");
+    expect(within(row as HTMLTableRowElement).getByText("Rs. 250.00")).toBeInTheDocument();
+
+    fireEvent.click(within(row as HTMLTableRowElement).getByRole("button", { name: "Edit" }));
+    expect(screen.getByLabelText(/^Opening balance/)).toHaveValue(250);
   });
 });

@@ -31,6 +31,7 @@ Use SQLite with Drizzle ORM.
 - email
 - address
 - notes
+- opening_balance_cents
 - created_at
 - updated_at
 
@@ -42,6 +43,7 @@ Use SQLite with Drizzle ORM.
 - email
 - address
 - notes
+- opening_balance_cents
 - created_at
 - updated_at
 

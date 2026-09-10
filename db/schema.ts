@@ -74,6 +74,10 @@ export const productVariants = sqliteTable(
   }),
 );
 
+// openingBalanceCents is what the party already owed when they were first
+// entered, before any invoice in this database. Positive means the customer
+// owes the shop (or the shop owes the supplier); negative is money held in
+// advance. The khata starts from this figure.
 export const suppliers = sqliteTable("suppliers", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
@@ -81,6 +85,7 @@ export const suppliers = sqliteTable("suppliers", {
   email: text("email"),
   address: text("address"),
   notes: text("notes"),
+  openingBalanceCents: integer("opening_balance_cents").notNull().default(0),
   ...timestamps,
 });
 
@@ -91,6 +96,7 @@ export const customers = sqliteTable("customers", {
   email: text("email"),
   address: text("address"),
   notes: text("notes"),
+  openingBalanceCents: integer("opening_balance_cents").notNull().default(0),
   ...timestamps,
 });
 

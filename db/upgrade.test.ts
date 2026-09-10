@@ -6,7 +6,8 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createDb } from "./client";
-import { getLedgerSummary, recordPayment } from "./ledger-service";
+import { listCustomers, updateCustomer } from "./contacts-service";
+import { getLedgerStatement, getLedgerSummary, recordPayment } from "./ledger-service";
 import { getProduct, listProducts, updateProduct } from "./products-service";
 import { createPurchase } from "./purchases-service";
 import { createSale, getSale, listSales, updateSale } from "./sales-service";
@@ -22,15 +23,26 @@ afterEach(() => {
 
 type Journal = { entries: { tag: string }[] };
 
+/** The first migration an installed 0.1.5 copy had never seen. */
+const firstUnshippedMigrationTag = "0003_tan_sue_storm";
+
 /**
- * Runs the real migrator against a folder holding only the migrations that
- * shipped before this release, so the database ends up exactly where an
- * installed copy sits — including the bookkeeping that stops them re-running.
+ * Runs the real migrator against a folder holding only the migrations 0.1.5
+ * shipped with, so the database ends up exactly where an installed copy sits —
+ * including the bookkeeping that stops them re-running. Everything from the
+ * variant migration onwards is left for the upgrade under test to apply, so
+ * adding a migration does not quietly move where this fixture starts.
  */
 function migrateToPreviousRelease(databasePath: string) {
   const source = path.resolve("drizzle");
   const journal: Journal = JSON.parse(fs.readFileSync(path.join(source, "meta/_journal.json"), "utf8"));
-  const previous = journal.entries.slice(0, journal.entries.length - 1);
+  const cutoff = journal.entries.findIndex((entry) => entry.tag === firstUnshippedMigrationTag);
+
+  if (cutoff === -1) {
+    throw new Error(`Migration ${firstUnshippedMigrationTag} is missing, so the 0.1.5 starting point cannot be built.`);
+  }
+
+  const previous = journal.entries.slice(0, cutoff);
 
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), "stylecraft-old-migrations-"));
   tempDirs.push(folder);
@@ -123,6 +135,24 @@ describe("upgrading an existing install", () => {
     expect(summary.customerReceivableCents).toBe(0);
     expect(summary.supplierPayableCents).toBe(0);
     expect(summary.customers[0]).toMatchObject({ partyName: "Ali", invoicedCents: 250000, paidCents: 250000, balanceCents: 0 });
+  });
+
+  it("lets real old udhaar be entered back as an opening balance after that", () => {
+    const databasePath = makePreUpgradeDatabase();
+    const [ali] = listCustomers(databasePath);
+
+    // The upgrade cannot know what was still owed on paper, so the shop types it in.
+    updateCustomer(databasePath, ali.id, { name: ali.name, phone: ali.phone, openingBalanceCents: 180000 });
+
+    const summary = getLedgerSummary(databasePath);
+    expect(summary.customers[0]).toMatchObject({ openingBalanceCents: 180000, invoicedCents: 250000, paidCents: 250000, balanceCents: 180000 });
+    expect(summary.customerReceivableCents).toBe(180000);
+
+    const statement = getLedgerStatement(databasePath, "customer", ali.id);
+    expect(statement.entries[0]).toMatchObject({ kind: "opening", debitCents: 180000, balanceCents: 180000 });
+
+    recordPayment(databasePath, { partyType: "customer", partyId: ali.id, amountCents: 180000, paymentDate: new Date("2026-09-10T00:00:00.000Z"), method: "Cash" });
+    expect(getLedgerSummary(databasePath).customers[0].balanceCents).toBe(0);
   });
 
   it("lets sizes be added to a product that had none, keeping its existing stock", () => {
