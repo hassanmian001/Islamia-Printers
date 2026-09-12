@@ -174,6 +174,7 @@ describe("PurchasesScreen", () => {
     fireEvent.change(screen.getAllByLabelText("Quantity")[1], { target: { value: "2" } });
     fireEvent.change(screen.getAllByLabelText("Unit cost")[1], { target: { value: "35.75" } });
 
+    fireEvent.click(screen.getByRole("button", { name: "Paid in full" }));
     fireEvent.click(screen.getByRole("button", { name: "Save purchase" }));
 
     await waitFor(() => {
@@ -187,6 +188,31 @@ describe("PurchasesScreen", () => {
           { variantId: 11, quantity: 4, unitCostCents: 1250 },
           { variantId: 21, quantity: 2, unitCostCents: 3575 },
         ],
+      });
+    });
+  });
+
+  it("treats a blank amount paid as nothing paid to the supplier", async () => {
+    render(<PurchasesScreen />);
+
+    await screen.findByText("Initial restock");
+
+    fireEvent.change(screen.getByLabelText("Supplier"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("Purchase date"), { target: { value: "2026-07-10" } });
+    fireEvent.change(screen.getByLabelText("Product 1"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "4" } });
+    fireEvent.change(screen.getByLabelText("Unit cost"), { target: { value: "12.50" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save purchase" }));
+
+    await waitFor(() => {
+      expect(purchasesApi.create).toHaveBeenCalledWith({
+        supplierId: 1,
+        supplierName: null,
+        purchaseDate: "2026-07-10",
+        notes: null,
+        amountPaidCents: 0,
+        items: [{ variantId: 11, quantity: 4, unitCostCents: 1250 }],
       });
     });
   });

@@ -28,4 +28,19 @@ export function registerLedgerHandlers(ipcMain: IpcMain) {
 
     return deletePayment(getDatabasePath(), id);
   });
+
+  ipcMain.handle(ledgerChannels.listPaidInFullSales, async () => {
+    const [{ getDatabasePath }, { listSalesRecordedAsPaidInFull }] = await Promise.all([
+      import("../db/paths.js"),
+      import("../db/khata-repair-service.js"),
+    ]);
+
+    return listSalesRecordedAsPaidInFull(getDatabasePath());
+  });
+
+  ipcMain.handle(ledgerChannels.moveSalesToKhata, async (_event, saleIds: number[], actorName?: string | null) => {
+    const [{ getDatabasePath }, { moveSalesToKhata }] = await Promise.all([import("../db/paths.js"), import("../db/khata-repair-service.js")]);
+
+    return moveSalesToKhata(getDatabasePath(), saleIds, actorName);
+  });
 }

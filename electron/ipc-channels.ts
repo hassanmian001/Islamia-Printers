@@ -76,6 +76,8 @@ export const ledgerChannels = {
   getStatement: "ledger:getStatement",
   recordPayment: "ledger:recordPayment",
   deletePayment: "ledger:deletePayment",
+  listPaidInFullSales: "ledger:listPaidInFullSales",
+  moveSalesToKhata: "ledger:moveSalesToKhata",
 } as const;
 
 export const securityChannels = {

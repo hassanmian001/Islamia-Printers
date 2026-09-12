@@ -40,6 +40,26 @@ function makeProduct(databasePath: string) {
 }
 
 describe("ledger service", () => {
+  it("treats an omitted amount paid as nothing paid yet", () => {
+    const databasePath = makeTempDatabasePath();
+    const product = makeProduct(databasePath);
+    const customer = createCustomer(databasePath, { name: "Ali" });
+
+    const sale = createSale(databasePath, {
+      customerId: customer.id,
+      saleDate: new Date("2026-08-01T00:00:00.000Z"),
+      items: [{ variantId: product.variants[0].id, quantity: 2, unitPriceCents: 2_000 }],
+    });
+
+    expect(sale.totalAmountCents).toBe(4_000);
+    expect(sale.amountPaidCents).toBe(0);
+    expect(sale.balanceDueCents).toBe(4_000);
+
+    const summary = getLedgerSummary(databasePath);
+    expect(summary.customers[0]).toMatchObject({ partyName: "Ali", invoicedCents: 4_000, paidCents: 0, balanceCents: 4_000 });
+    expect(summary.customerReceivableCents).toBe(4_000);
+  });
+
   it("leaves nothing owing when a sale is paid in full", () => {
     const databasePath = makeTempDatabasePath();
     const product = makeProduct(databasePath);
@@ -48,6 +68,7 @@ describe("ledger service", () => {
     const sale = createSale(databasePath, {
       customerId: customer.id,
       saleDate: new Date("2026-08-01T00:00:00.000Z"),
+      amountPaidCents: 4_000,
       items: [{ variantId: product.variants[0].id, quantity: 2, unitPriceCents: 2_000 }],
     });
 

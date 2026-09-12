@@ -264,6 +264,7 @@ describe("SalesScreen", () => {
     fireEvent.change(screen.getAllByLabelText("Unit price")[1], { target: { value: "62.99" } });
     fireEvent.change(screen.getAllByLabelText("Discount")[1], { target: { value: "0" } });
 
+    fireEvent.click(screen.getByRole("button", { name: "Paid in full" }));
     fireEvent.click(screen.getByRole("button", { name: "Save sale" }));
 
     await waitFor(() => {
@@ -280,6 +281,48 @@ describe("SalesScreen", () => {
         ],
       });
     });
+  });
+
+  it("treats a blank amount paid as nothing paid and puts the whole sale on the khata", async () => {
+    render(<SalesScreen />);
+
+    await screen.findByText("INV-000010");
+
+    fireEvent.change(screen.getByLabelText("Customer"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("Sale date"), { target: { value: "2026-07-10" } });
+    fireEvent.change(screen.getByLabelText("Product 1"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "2" } });
+    fireEvent.change(screen.getByLabelText("Unit price"), { target: { value: "24.99" } });
+    fireEvent.change(screen.getByLabelText("Discount"), { target: { value: "0" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save sale" }));
+
+    await waitFor(() => {
+      expect(salesApi.create).toHaveBeenCalledWith({
+        customerId: 1,
+        customerName: null,
+        saleDate: "2026-07-10",
+        paymentMethod: null,
+        notes: null,
+        amountPaidCents: 0,
+        items: [{ variantId: 11, quantity: 2, unitPriceCents: 2499, discountAmountCents: 0 }],
+      });
+    });
+  });
+
+  it("refuses an unpaid sale that has no customer to carry the balance", async () => {
+    render(<SalesScreen />);
+
+    await screen.findByText("INV-000010");
+
+    fireEvent.change(screen.getByLabelText("Product 1"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("Unit price"), { target: { value: "24.99" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save sale" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("nothing was paid");
+    expect(salesApi.create).not.toHaveBeenCalled();
   });
 
   it("blocks invalid quantity before calling the API", async () => {

@@ -175,7 +175,9 @@ function normalizeSaleInput(input: SaleInput) {
   });
 
   const totalAmountCents = items.reduce((sum, item) => sum + item.totalAmountCents, 0);
-  const amountPaidCents = input.amountPaidCents ?? totalAmountCents;
+  // An omitted amount means nothing has been paid yet: the whole sale sits on the khata
+  // until a payment is recorded. Never assume it was settled in full.
+  const amountPaidCents = input.amountPaidCents ?? 0;
 
   validateNonNegativeInteger(amountPaidCents, "Amount paid");
 

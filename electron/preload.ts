@@ -35,6 +35,8 @@ const stylecraftApi: StyleCraftApi = {
     getStatement: (partyType, partyId) => ipcRenderer.invoke(ledgerChannels.getStatement, partyType, partyId),
     recordPayment: (input) => ipcRenderer.invoke(ledgerChannels.recordPayment, input),
     deletePayment: (id) => ipcRenderer.invoke(ledgerChannels.deletePayment, id),
+    listPaidInFullSales: () => ipcRenderer.invoke(ledgerChannels.listPaidInFullSales),
+    moveSalesToKhata: (saleIds, actorName) => ipcRenderer.invoke(ledgerChannels.moveSalesToKhata, saleIds, actorName),
   },
   products: {
     list: (filters) => ipcRenderer.invoke(productChannels.list, filters),

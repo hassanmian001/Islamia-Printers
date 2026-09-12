@@ -32,7 +32,7 @@ Stock is held per size and colour, sales and purchases can be left part paid and
 ## Purchases
 
 - Create supplier purchases with one or more lines, each naming a product and a size/colour.
-- Record how much was paid now; anything short of the total stays on the supplier's khata.
+- Record how much was paid now; anything short of the total stays on the supplier's khata. An empty box means nothing has been paid yet, and "Paid in full" fills the total in one click.
 - Add suppliers inline while recording purchases.
 - Increase stock transactionally when a purchase is saved.
 - Record one stock movement per purchased product line.
@@ -41,7 +41,8 @@ Stock is held per size and colour, sales and purchases can be left part paid and
 ## Sales
 
 - Create customer sales with one or more lines, each naming a product and a size/colour.
-- Record how much was paid now; anything short of the total stays on the customer's khata.
+- Record how much was paid now; anything short of the total stays on the customer's khata. An empty box means nothing has been paid yet, and "Paid in full" fills the total in one click.
+- A sale with nothing paid needs a customer, so the balance always has a khata to sit on.
 - Correct a recorded sale from its history row: the original stock deduction is put back and the new lines applied, so stock, profit and the customer's balance end up as if it had been entered that way.
 - Editing asks for the password set in Settings, checked in the main process. Sales that already have a return against them cannot be edited.
 - Add customers inline while recording sales.
@@ -59,6 +60,7 @@ Stock is held per size and colour, sales and purchases can be left part paid and
 - Click a party to see a running statement, opening balance first, then every invoice, payment and return against them.
 - Record a payment received or paid against an open balance.
 - Every account is listed, settled ones included, until the tick is taken off.
+- Sales left over from before v0.4.0, when an empty "Amount paid now" box meant paid in full, are listed for review and can be moved onto the customer's khata in one go.
 
 ## Reports
 

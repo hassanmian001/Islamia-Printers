@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
+import PaidInFullRepairPanel from "@/components/ledger/PaidInFullRepairPanel";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/currency";
 import type { LedgerPartySummaryDto, LedgerPartyType, LedgerStatementDto, LedgerSummaryDto } from "@/types/stylecraft-api";
@@ -141,6 +142,16 @@ export default function LedgerScreen() {
           {error}
         </div>
       ) : null}
+
+      <PaidInFullRepairPanel
+        onRepaired={async () => {
+          await loadSummary();
+
+          if (selectedPartyId !== null) {
+            await openStatement(partyType, selectedPartyId);
+          }
+        }}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={() => switchPartyType("customer")} size="sm" type="button" variant={partyType === "customer" ? "default" : "ghost"}>

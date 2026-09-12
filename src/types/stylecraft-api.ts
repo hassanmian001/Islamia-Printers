@@ -675,11 +675,32 @@ export type LedgerSummaryDto = {
   supplierPayableCents: number;
 };
 
+/** A sale still carrying the old "blank meant paid in full" settlement. */
+export type PaidInFullSaleDto = {
+  saleId: number;
+  invoiceNumber: string;
+  customerId: number | null;
+  customerName: string | null;
+  saleDate: Date;
+  totalAmountCents: number;
+  amountPaidCents: number;
+  paymentMethod: string | null;
+  notes: string | null;
+};
+
+export type KhataRepairResultDto = {
+  movedCount: number;
+  movedAmountCents: number;
+  skippedSaleIds: number[];
+};
+
 export type LedgerApi = {
   getSummary(): Promise<LedgerSummaryDto>;
   getStatement(partyType: LedgerPartyType, partyId: number): Promise<LedgerStatementDto>;
   recordPayment(input: PaymentInput): Promise<PaymentDto>;
   deletePayment(id: number): Promise<void>;
+  listPaidInFullSales(): Promise<PaidInFullSaleDto[]>;
+  moveSalesToKhata(saleIds: number[], actorName?: string | null): Promise<KhataRepairResultDto>;
 };
 
 export type ThemePreference = "light" | "dark" | "system";

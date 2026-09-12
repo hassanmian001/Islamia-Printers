@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import LedgerScreen from "./LedgerScreen";
-import type { LedgerApi, LedgerStatementDto, LedgerSummaryDto } from "@/types/stylecraft-api";
+import type { LedgerApi, LedgerStatementDto, LedgerSummaryDto, PaidInFullSaleDto } from "@/types/stylecraft-api";
 
 const summary: LedgerSummaryDto = {
   customers: [
@@ -29,6 +29,31 @@ const statement: LedgerStatementDto = {
   ],
 };
 
+const paidInFullSales: PaidInFullSaleDto[] = [
+  {
+    saleId: 11,
+    invoiceNumber: "INV-000011",
+    customerId: 1,
+    customerName: "Ali",
+    saleDate: new Date("2026-08-09T00:00:00.000Z"),
+    totalAmountCents: 5_000,
+    amountPaidCents: 5_000,
+    paymentMethod: null,
+    notes: null,
+  },
+  {
+    saleId: 12,
+    invoiceNumber: "INV-000012",
+    customerId: null,
+    customerName: null,
+    saleDate: new Date("2026-08-10T00:00:00.000Z"),
+    totalAmountCents: 2_000,
+    amountPaidCents: 2_000,
+    paymentMethod: "Cash",
+    notes: null,
+  },
+];
+
 describe("LedgerScreen", () => {
   let ledgerApi: LedgerApi;
 
@@ -42,6 +67,8 @@ describe("LedgerScreen", () => {
       getStatement: vi.fn().mockResolvedValue(statement),
       recordPayment: vi.fn().mockResolvedValue({}),
       deletePayment: vi.fn().mockResolvedValue(undefined),
+      listPaidInFullSales: vi.fn().mockResolvedValue([]),
+      moveSalesToKhata: vi.fn().mockResolvedValue({ movedCount: 0, movedAmountCents: 0, skippedSaleIds: [] }),
     };
 
     window.stylecraft = { ledger: ledgerApi } as unknown as typeof window.stylecraft;
@@ -131,5 +158,49 @@ describe("LedgerScreen", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Payment amount must be more than zero.");
     expect(ledgerApi.recordPayment).not.toHaveBeenCalled();
+  });
+  describe("sales recorded as paid in full", () => {
+    it("stays out of the way when no sale is recorded as paid in full", async () => {
+      render(<LedgerScreen />);
+
+      await screen.findByText("Ali");
+      expect(screen.queryByText("Sales recorded as paid in full")).not.toBeInTheDocument();
+    });
+
+    it("moves the ticked sales onto the khata and leaves customer-less ones alone", async () => {
+      ledgerApi.listPaidInFullSales = vi.fn().mockResolvedValue(paidInFullSales);
+      ledgerApi.moveSalesToKhata = vi.fn().mockResolvedValue({ movedCount: 1, movedAmountCents: 5_000, skippedSaleIds: [] });
+
+      render(<LedgerScreen />);
+
+      await screen.findByText("Sales recorded as paid in full");
+      fireEvent.click(screen.getByRole("button", { name: "Review" }));
+
+      expect(await screen.findByText("INV-000011")).toBeInTheDocument();
+      expect(screen.getByLabelText("Move INV-000011 onto the khata")).toBeChecked();
+      expect(screen.getByLabelText("Move INV-000012 onto the khata")).toBeDisabled();
+      expect(screen.getByText("1 sale has no customer and cannot carry a balance.")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Move 1 sale onto the khata (Rs. 50.00)" }));
+      fireEvent.click(screen.getByRole("button", { name: "Yes, move 1 onto the khata" }));
+
+      await waitFor(() => {
+        expect(ledgerApi.moveSalesToKhata).toHaveBeenCalledWith([11]);
+      });
+      expect(await screen.findByRole("status")).toHaveTextContent("1 sale worth Rs. 50.00 moved onto the khata.");
+    });
+
+    it("does not move anything until the confirmation is clicked", async () => {
+      ledgerApi.listPaidInFullSales = vi.fn().mockResolvedValue(paidInFullSales);
+
+      render(<LedgerScreen />);
+
+      await screen.findByText("Sales recorded as paid in full");
+      fireEvent.click(screen.getByRole("button", { name: "Review" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Move 1 sale onto the khata (Rs. 50.00)" }));
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+      expect(ledgerApi.moveSalesToKhata).not.toHaveBeenCalled();
+    });
   });
 });

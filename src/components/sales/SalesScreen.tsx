@@ -162,7 +162,7 @@ function buildSaleInput(form: SaleFormState): { input?: SaleInput; error?: strin
   }
 
   const totalAmountCents = items.reduce((sum, item) => sum + Math.max(0, item.quantity * item.unitPriceCents - item.discountAmountCents), 0);
-  let amountPaidCents = totalAmountCents;
+  let amountPaidCents = 0;
 
   if (form.amountPaid.trim()) {
     amountPaidCents = decimalStringToCents(form.amountPaid);
@@ -177,7 +177,10 @@ function buildSaleInput(form: SaleFormState): { input?: SaleInput; error?: strin
   }
 
   if (amountPaidCents < totalAmountCents && !form.customerId && !form.customerName.trim()) {
-    return { error: "Choose or name a customer before leaving part of a sale unpaid, so the balance has a khata to sit on." };
+    return {
+      error:
+        "An empty amount paid means nothing was paid, so this sale needs a khata. Choose or name a customer, or press “Paid in full” if the customer paid everything.",
+    };
   }
 
   return {
@@ -378,6 +381,8 @@ export default function SalesScreen() {
   }
 
   const totalCents = form.items.reduce((sum, item) => sum + lineTotalCents(item), 0);
+  const paidNowCents = form.amountPaid.trim() ? decimalStringToCents(form.amountPaid) : 0;
+  const balanceDueCents = Number.isFinite(paidNowCents) ? Math.max(totalCents - paidNowCents, 0) : totalCents;
 
   return (
     <div className="space-y-6">
@@ -470,24 +475,34 @@ export default function SalesScreen() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="sale-amount-paid">
-            Amount paid now
-            <input
-              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/50"
-              id="sale-amount-paid"
-              min="0"
-              onChange={(event) => setForm((current) => ({ ...current, amountPaid: event.target.value }))}
-              placeholder={`Leave blank for paid in full (${formatCurrency(totalCents)})`}
-              step="0.01"
-              type="number"
-              value={form.amountPaid}
-            />
-            <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
-              {form.amountPaid.trim()
-                ? `Goes on the customer's khata: ${formatCurrency(Math.max(totalCents - decimalStringToCents(form.amountPaid), 0))}`
-                : "Nothing will be left owing."}
+          <div className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200">
+            <label htmlFor="sale-amount-paid">Amount paid now</label>
+            <div className="flex gap-2">
+              <input
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/50"
+                id="sale-amount-paid"
+                min="0"
+                onChange={(event) => setForm((current) => ({ ...current, amountPaid: event.target.value }))}
+                placeholder="Leave blank if nothing was paid"
+                step="0.01"
+                type="number"
+                value={form.amountPaid}
+              />
+              <Button
+                className="shrink-0 border border-slate-300 dark:border-slate-600"
+                onClick={() => setForm((current) => ({ ...current, amountPaid: (totalCents / 100).toFixed(2) }))}
+                type="button"
+                variant="ghost"
+              >
+                Paid in full
+              </Button>
+            </div>
+            <span className={`text-xs font-normal ${balanceDueCents > 0 ? "text-amber-600 dark:text-amber-400" : "text-slate-500 dark:text-slate-400"}`}>
+              {balanceDueCents > 0
+                ? `Goes on the customer's khata: ${formatCurrency(balanceDueCents)}`
+                : "Paid in full — nothing will be left owing."}
             </span>
-          </label>
+          </div>
         </div>
 
         {editingSaleId !== null ? (
