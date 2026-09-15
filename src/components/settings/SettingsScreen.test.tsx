@@ -10,6 +10,7 @@ import type { BackupApi, DashboardApi, InvoiceApi, ProductApi, PurchaseApi, Repo
 
 describe("SettingsScreen", () => {
   let backupApi: BackupApi;
+  let invoicesApi: InvoiceApi;
   let settingsApi: SettingsApi;
   let updateApi: UpdateApi;
   let securityApi: SecurityApi;
@@ -45,6 +46,15 @@ describe("SettingsScreen", () => {
     updateApi = {
       check: vi.fn().mockResolvedValue({ status: "up-to-date", currentVersion: "0.1.4" }),
     };
+    invoicesApi = {
+      getBySaleId: vi.fn().mockResolvedValue({}),
+      getCustomerStatement: vi.fn().mockResolvedValue({}),
+      getFolder: vi.fn().mockResolvedValue({ folder: "D:/Invoices", isDefaultFolder: false }),
+      chooseFolder: vi.fn().mockResolvedValue("E:/StyleCraftInvoices"),
+      updateFolder: vi.fn().mockResolvedValue({ folder: "E:/StyleCraftInvoices", isDefaultFolder: false }),
+      savePdf: vi.fn().mockResolvedValue({ filePath: null, folder: "D:/Invoices" }),
+      reveal: vi.fn().mockResolvedValue(undefined),
+    } as unknown as InvoiceApi;
     securityApi = {
       getEditPasswordStatus: vi.fn().mockResolvedValue({ isSet: false }),
       setEditPassword: vi.fn().mockResolvedValue({ isSet: true }),
@@ -55,7 +65,7 @@ describe("SettingsScreen", () => {
     window.stylecraft = {
       backup: backupApi,
       dashboard: { getSummary: vi.fn().mockResolvedValue({}) } as unknown as DashboardApi,
-      invoices: { getBySaleId: vi.fn().mockResolvedValue({}) } as unknown as InvoiceApi,
+      invoices: invoicesApi,
       products: { list: vi.fn().mockResolvedValue([]), create: vi.fn().mockResolvedValue({}), update: vi.fn().mockResolvedValue({}), markInactive: vi.fn().mockResolvedValue({}) } as unknown as ProductApi,
       purchases: { list: vi.fn().mockResolvedValue([]), create: vi.fn().mockResolvedValue({}), listSuppliers: vi.fn().mockResolvedValue([]), createSupplier: vi.fn().mockResolvedValue({}) } as unknown as PurchaseApi,
       reports: { getReports: vi.fn().mockResolvedValue({}) } as unknown as ReportsApi,
@@ -157,5 +167,18 @@ describe("SettingsScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
 
     expect(await screen.findByRole("status")).toHaveTextContent("Could not check for updates: Network unreachable");
+  });
+  it("saves where downloaded invoices are kept", async () => {
+    render(<SettingsScreen />);
+
+    expect(await screen.findByDisplayValue("D:/Invoices")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save invoice folder" }));
+
+    await waitFor(() => {
+      expect(invoicesApi.updateFolder).toHaveBeenCalledWith("D:/Invoices");
+    });
+
+    expect(await screen.findByDisplayValue("E:/StyleCraftInvoices")).toBeInTheDocument();
   });
 });

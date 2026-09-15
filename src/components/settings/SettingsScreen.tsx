@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { styleCraftEmail, styleCraftPhone } from "@/lib/branding";
 import { useTheme } from "@/lib/use-theme";
-import type { BackupResultDto, BackupSettingsDto, BusinessSettingsDto, EditPasswordStatusDto, RestoreResultDto, ThemePreference, UpdateCheckResult } from "@/types/stylecraft-api";
+import type { BackupResultDto, BackupSettingsDto, BusinessSettingsDto, EditPasswordStatusDto, InvoiceFolderDto, RestoreResultDto, ThemePreference, UpdateCheckResult } from "@/types/stylecraft-api";
 
 const defaultBusinessForm: BusinessSettingsDto = {
   businessName: "StyleCraft",
@@ -38,6 +38,8 @@ export default function SettingsScreen() {
   const [businessSettings, setBusinessSettings] = useState<BusinessSettingsDto | null>(null);
   const [businessForm, setBusinessForm] = useState<BusinessSettingsDto>(defaultBusinessForm);
   const [backupLocation, setBackupLocation] = useState("");
+  const [invoiceFolderSettings, setInvoiceFolderSettings] = useState<InvoiceFolderDto | null>(null);
+  const [invoiceFolder, setInvoiceFolder] = useState("");
   const [restorePath, setRestorePath] = useState("");
   const [lastBackup, setLastBackup] = useState<BackupResultDto | null>(null);
   const [lastRestore, setLastRestore] = useState<RestoreResultDto | null>(null);
@@ -58,12 +60,15 @@ export default function SettingsScreen() {
     setError(null);
 
     try {
-      const [loadedBackupSettings, loadedBusinessSettings, loadedEditPasswordStatus] = await Promise.all([
+      const [loadedBackupSettings, loadedBusinessSettings, loadedEditPasswordStatus, loadedInvoiceFolder] = await Promise.all([
         window.stylecraft.backup.getSettings(),
         window.stylecraft.settings.getBusinessSettings(),
         window.stylecraft.security.getEditPasswordStatus(),
+        window.stylecraft.invoices.getFolder(),
       ]);
 
+      setInvoiceFolderSettings(loadedInvoiceFolder);
+      setInvoiceFolder(loadedInvoiceFolder.folder);
       setBackupSettings(loadedBackupSettings);
       setBusinessSettings(loadedBusinessSettings);
       setEditPasswordStatus(loadedEditPasswordStatus);
@@ -105,6 +110,36 @@ export default function SettingsScreen() {
       setBackupLocation(updatedSettings.backupLocation);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not save backup location.");
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function handleChooseInvoiceFolder() {
+    setError(null);
+
+    try {
+      const selectedDirectory = await window.stylecraft.invoices.chooseFolder();
+
+      if (selectedDirectory !== null) {
+        setInvoiceFolder(selectedDirectory);
+      }
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Could not choose invoice folder.");
+    }
+  }
+
+  async function handleSaveInvoiceFolder(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setIsWorking(true);
+
+    try {
+      const updatedFolder = await window.stylecraft.invoices.updateFolder(invoiceFolder);
+      setInvoiceFolderSettings(updatedFolder);
+      setInvoiceFolder(updatedFolder.folder);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Could not save invoice folder.");
     } finally {
       setIsWorking(false);
     }
@@ -322,7 +357,7 @@ export default function SettingsScreen() {
         ) : null}
       </section>
 
-      {isLoading || backupSettings === null || businessSettings === null ? (
+      {isLoading || backupSettings === null || businessSettings === null || invoiceFolderSettings === null ? (
         <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-5 text-sm text-slate-500 dark:text-slate-400">Loading settings...</div>
       ) : (
         <>
@@ -419,6 +454,35 @@ export default function SettingsScreen() {
               </Button>
               <Button disabled={isWorking} type="submit">
                 Save location
+              </Button>
+            </div>
+          </form>
+
+          <form className="grid gap-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4" noValidate onSubmit={handleSaveInvoiceFolder}>
+            <div>
+              <h3 className="font-semibold text-slate-950 dark:text-slate-50">Invoice folder</h3>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Current folder: {invoiceFolderSettings.folder}</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                {invoiceFolderSettings.isDefaultFolder ? "Downloaded invoice and statement PDFs go to the default folder." : "Downloaded invoice and statement PDFs go to this saved folder."}
+              </p>
+            </div>
+
+            <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="invoice-folder">
+              Invoice folder
+              <input
+                className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                id="invoice-folder"
+                onChange={(event) => setInvoiceFolder(event.target.value)}
+                value={invoiceFolder}
+              />
+            </label>
+
+            <div className="flex flex-wrap gap-2">
+              <Button disabled={isWorking} onClick={handleChooseInvoiceFolder} type="button" variant="ghost">
+                Choose invoice folder
+              </Button>
+              <Button disabled={isWorking} type="submit">
+                Save invoice folder
               </Button>
             </div>
           </form>

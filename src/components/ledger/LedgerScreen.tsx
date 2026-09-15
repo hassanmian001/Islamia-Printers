@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 
+import InvoicePreview from "@/components/invoices/InvoicePreview";
+import StatementPreview from "@/components/invoices/StatementPreview";
 import PaidInFullRepairPanel from "@/components/ledger/PaidInFullRepairPanel";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/currency";
-import type { LedgerPartySummaryDto, LedgerPartyType, LedgerStatementDto, LedgerSummaryDto } from "@/types/stylecraft-api";
+import type { CustomerStatementDto, InvoiceDetailDto, LedgerPartySummaryDto, LedgerPartyType, LedgerStatementDto, LedgerSummaryDto } from "@/types/stylecraft-api";
+
+/** Whichever printable document the khata has open, if any. */
+type OpenDocument = { kind: "invoice"; invoice: InvoiceDetailDto } | { kind: "statement"; statement: CustomerStatementDto };
 
 const inputClass =
   "rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/50";
@@ -48,6 +53,8 @@ export default function LedgerScreen() {
   const [paymentDate, setPaymentDate] = useState(todayInputValue);
   const [paymentMethod, setPaymentMethod] = useState("Cash");
   const [paymentNotes, setPaymentNotes] = useState("");
+  const [openDocument, setOpenDocument] = useState<OpenDocument | null>(null);
+  const [loadingDocumentKey, setLoadingDocumentKey] = useState<string | null>(null);
 
   const loadSummary = useCallback(async () => {
     setIsLoading(true);
@@ -69,6 +76,7 @@ export default function LedgerScreen() {
   const openStatement = useCallback(async (nextPartyType: LedgerPartyType, partyId: number) => {
     setError(null);
     setSelectedPartyId(partyId);
+    setOpenDocument(null);
 
     try {
       setStatement(await window.stylecraft.ledger.getStatement(nextPartyType, partyId));
@@ -81,6 +89,28 @@ export default function LedgerScreen() {
     setPartyType(nextPartyType);
     setSelectedPartyId(null);
     setStatement(null);
+    setOpenDocument(null);
+  }
+
+  async function loadDocument(key: string, load: () => Promise<OpenDocument>) {
+    setError(null);
+    setLoadingDocumentKey(key);
+
+    try {
+      setOpenDocument(await load());
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Could not open the invoice.");
+    } finally {
+      setLoadingDocumentKey(null);
+    }
+  }
+
+  async function handleViewInvoice(saleId: number) {
+    await loadDocument(`invoice-${saleId}`, async () => ({ kind: "invoice", invoice: await window.stylecraft.invoices.getBySaleId(saleId) }));
+  }
+
+  async function handleViewFullStatement(customerId: number) {
+    await loadDocument("statement", async () => ({ kind: "statement", statement: await window.stylecraft.invoices.getCustomerStatement(customerId) }));
   }
 
   async function handleRecordPayment(event: React.FormEvent<HTMLFormElement>) {
@@ -232,10 +262,23 @@ export default function LedgerScreen() {
                 Balance {formatCurrency(statement.balanceCents)} {statement.balanceCents > 0 ? (partyType === "customer" ? "still to collect" : "still to pay") : "— settled"}
               </p>
             </div>
-            <Button onClick={() => { setStatement(null); setSelectedPartyId(null); }} size="sm" type="button" variant="ghost">
-              Close
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {partyType === "customer" ? (
+                <Button disabled={loadingDocumentKey === "statement"} onClick={() => void handleViewFullStatement(statement.partyId)} size="sm" type="button">
+                  {loadingDocumentKey === "statement" ? "Opening..." : "View full statement"}
+                </Button>
+              ) : null}
+              <Button onClick={() => { setStatement(null); setSelectedPartyId(null); setOpenDocument(null); }} size="sm" type="button" variant="ghost">
+                Close
+              </Button>
+            </div>
           </div>
+
+          {openDocument === null ? null : openDocument.kind === "invoice" ? (
+            <InvoicePreview invoice={openDocument.invoice} onClose={() => setOpenDocument(null)} />
+          ) : (
+            <StatementPreview onClose={() => setOpenDocument(null)} statement={openDocument.statement} />
+          )}
 
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700 text-left text-sm">
@@ -247,17 +290,18 @@ export default function LedgerScreen() {
                   <th className="px-4 py-3 font-semibold">Debit</th>
                   <th className="px-4 py-3 font-semibold">Credit</th>
                   <th className="px-4 py-3 font-semibold">Balance</th>
+                  <th className="px-4 py-3 font-semibold">Invoice</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {statement.entries.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={6}>
+                    <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={7}>
                       No entries yet.
                     </td>
                   </tr>
                 ) : (
-                  statement.entries.map((entry, index) => (
+                  statement.entries.map(({ saleId, ...entry }, index) => (
                     <tr key={`${entry.kind}-${entry.reference}-${index}`}>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{formatDate(entry.date)}</td>
                       <td className="px-4 py-3 text-slate-950 dark:text-slate-50">{entryLabels[entry.kind]}</td>
@@ -265,6 +309,15 @@ export default function LedgerScreen() {
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{entry.debitCents === 0 ? "-" : formatCurrency(entry.debitCents)}</td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{entry.creditCents === 0 ? "-" : formatCurrency(entry.creditCents)}</td>
                       <td className="px-4 py-3 font-medium text-slate-950 dark:text-slate-50">{formatCurrency(entry.balanceCents)}</td>
+                      <td className="px-4 py-3">
+                        {saleId === null ? (
+                          <span className="text-slate-400 dark:text-slate-500">-</span>
+                        ) : (
+                          <Button disabled={loadingDocumentKey === `invoice-${saleId}`} onClick={() => void handleViewInvoice(saleId)} size="sm" type="button" variant="ghost">
+                            {loadingDocumentKey === `invoice-${saleId}` ? "Opening..." : "View"}
+                          </Button>
+                        )}
+                      </td>
                     </tr>
                   ))
                 )}

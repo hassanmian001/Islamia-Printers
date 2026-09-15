@@ -37,6 +37,8 @@ export type LedgerEntryDto = {
   kind: "opening" | "sale" | "purchase" | "payment" | "sale_return" | "purchase_return";
   reference: string;
   description: string;
+  /** The sale behind this line, when there is one, so its invoice can be opened from the khata. */
+  saleId: number | null;
   debitCents: number;
   creditCents: number;
   balanceCents: number;
@@ -228,6 +230,7 @@ function buildEntries(openingBalanceCents: number, openingDate: Date, rows: Omit
       kind: "opening",
       reference: "Opening",
       description: "Balance carried over from before",
+      saleId: null,
       debitCents: Math.max(openingBalanceCents, 0),
       creditCents: Math.max(-openingBalanceCents, 0),
       balanceCents,
@@ -263,13 +266,14 @@ export function getLedgerStatement(databasePath: string | undefined, partyType: 
           kind: "sale",
           reference: sale.invoiceNumber,
           description: "Sale invoice",
+          saleId: sale.id,
           debitCents: sale.totalAmountCents,
           creditCents: 0,
         });
       }
 
       for (const row of db
-        .select({ id: saleReturns.id, returnDate: saleReturns.returnDate, totalAmountCents: saleReturns.totalAmountCents, invoiceNumber: sales.invoiceNumber })
+        .select({ id: saleReturns.id, returnDate: saleReturns.returnDate, totalAmountCents: saleReturns.totalAmountCents, invoiceNumber: sales.invoiceNumber, saleId: sales.id })
         .from(saleReturns)
         .innerJoin(sales, eq(saleReturns.saleId, sales.id))
         .where(eq(sales.customerId, partyId))
@@ -279,6 +283,7 @@ export function getLedgerStatement(databasePath: string | undefined, partyType: 
           kind: "sale_return",
           reference: row.invoiceNumber,
           description: "Sale return",
+          saleId: row.saleId,
           debitCents: 0,
           creditCents: row.totalAmountCents,
         });
@@ -290,6 +295,7 @@ export function getLedgerStatement(databasePath: string | undefined, partyType: 
           kind: "purchase",
           reference: `PUR-${String(purchase.id).padStart(6, "0")}`,
           description: "Purchase bill",
+          saleId: null,
           debitCents: purchase.totalAmountCents,
           creditCents: 0,
         });
@@ -306,6 +312,7 @@ export function getLedgerStatement(databasePath: string | undefined, partyType: 
           kind: "purchase_return",
           reference: `PUR-${String(row.purchaseId).padStart(6, "0")}`,
           description: "Purchase return",
+          saleId: null,
           debitCents: 0,
           creditCents: row.totalAmountCents,
         });
@@ -322,6 +329,7 @@ export function getLedgerStatement(databasePath: string | undefined, partyType: 
         kind: "payment",
         reference: payment.method ?? "Payment",
         description: payment.notes ?? (partyType === "customer" ? "Payment received" : "Payment made"),
+        saleId: payment.saleId,
         debitCents: 0,
         creditCents: payment.amountCents,
       });

@@ -286,4 +286,23 @@ describe("ledger service", () => {
     deletePayment(databasePath, standalone.id);
     expect(getLedgerStatement(databasePath, "customer", customer.id).entries.filter((entry) => entry.kind === "payment")).toHaveLength(1);
   });
+  it("keeps the sale behind each khata line, so its invoice can be opened", () => {
+    const databasePath = makeTempDatabasePath();
+    const product = makeProduct(databasePath);
+    const customer = createCustomer(databasePath, { name: "Ali" });
+
+    const sale = createSale(databasePath, {
+      customerId: customer.id,
+      saleDate: new Date("2026-08-01T00:00:00.000Z"),
+      amountPaidCents: 0,
+      items: [{ variantId: product.variants[0].id, quantity: 1, unitPriceCents: 2_000 }],
+    });
+
+    recordPayment(databasePath, { partyType: "customer", partyId: customer.id, amountCents: 500, paymentDate: new Date("2026-08-02T00:00:00.000Z") });
+
+    const entries = getLedgerStatement(databasePath, "customer", customer.id).entries;
+
+    expect(entries.find((entry) => entry.kind === "sale")?.saleId).toBe(sale.id);
+    expect(entries.find((entry) => entry.kind === "payment")?.saleId).toBeNull();
+  });
 });

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 
+import InvoicePreview from "@/components/invoices/InvoicePreview";
 import { findVariant, VariantPicker } from "@/components/products/VariantPicker";
 import { Button } from "@/components/ui/button";
-import { styleCraftLogoDataUri } from "@/lib/branding";
 import { formatCurrency } from "@/lib/currency";
 import type { CustomerDto, InvoiceDetailDto, ProductDto, SaleDetailDto, SaleHistoryDto, SaleInput } from "@/types/stylecraft-api";
 
@@ -45,10 +45,6 @@ function makeEmptyForm(): SaleFormState {
   };
 }
 
-function formatInvoiceCurrency(cents: number, currencySymbol: string) {
-  return formatCurrency(cents, currencySymbol);
-}
-
 function formatDate(value: Date) {
   return new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date(value));
 }
@@ -61,43 +57,6 @@ function decimalStringToCents(value: string) {
   }
 
   return Math.round(amount * 100);
-}
-
-function escapeHtml(value: string | number | null) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function printInvoice(invoice: InvoiceDetailDto) {
-  const printableWindow = window.open("", "_blank");
-
-  if (printableWindow === null) {
-    throw new Error("Could not open print window.");
-  }
-
-  const businessLines = [invoice.business.phone, invoice.business.email, invoice.business.address]
-    .filter((line): line is string => line !== null && line.trim() !== "")
-    .map((line) => `<div>${escapeHtml(line)}</div>`)
-    .join("");
-  const customerLines = [invoice.customerName, invoice.customerPhone, invoice.customerEmail, invoice.customerAddress]
-    .filter((line): line is string => line !== null && line.trim() !== "")
-    .map((line) => `<div>${escapeHtml(line)}</div>`)
-    .join("");
-  const itemRows = invoice.items
-    .map(
-      (item) =>
-        `<tr><td>${escapeHtml(item.productName)}</td><td>${escapeHtml(item.productSku)}</td><td>${item.quantity}</td><td>${escapeHtml(formatInvoiceCurrency(item.unitPriceCents, invoice.business.currencySymbol))}</td><td>${escapeHtml(formatInvoiceCurrency(item.discountAmountCents, invoice.business.currencySymbol))}</td><td>${escapeHtml(formatInvoiceCurrency(item.totalAmountCents, invoice.business.currencySymbol))}</td></tr>`,
-    )
-    .join("");
-
-  printableWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(invoice.invoiceNumber)}</title><style>body{font-family:Arial,sans-serif;margin:32px;color:#0f172a}.header{display:flex;justify-content:space-between;gap:24px;border-bottom:2px solid #0f172a;padding-bottom:18px}.brand{display:flex;align-items:center;gap:14px}.logo{width:62px;height:62px;object-fit:contain}.muted{color:#475569;font-size:13px}.box{margin-top:24px;border:1px solid #cbd5e1;border-radius:12px;padding:16px}table{border-collapse:collapse;width:100%;margin-top:18px;font-size:12px}th,td{border:1px solid #cbd5e1;padding:8px;text-align:left}th{background:#f1f5f9}.totals{margin-left:auto;margin-top:18px;width:280px}.totals div{display:flex;justify-content:space-between;padding:6px 0}.total{font-weight:700;border-top:1px solid #cbd5e1}</style></head><body><div class="header"><div class="brand"><img class="logo" src="${styleCraftLogoDataUri}" alt="StyleCraft logo"><div><h1>${escapeHtml(invoice.business.businessName)}</h1><div class="muted">${businessLines}</div></div></div><div><h2>Invoice ${escapeHtml(invoice.invoiceNumber)}</h2><div class="muted">Date: ${escapeHtml(formatDate(invoice.saleDate))}</div><div class="muted">Payment: ${escapeHtml(invoice.paymentMethod ?? "-")}</div></div></div><div class="box"><strong>Bill To</strong><div class="muted">${customerLines || "No customer"}</div></div><table><thead><tr><th>Product</th><th>SKU</th><th>Qty</th><th>Unit price</th><th>Discount</th><th>Total</th></tr></thead><tbody>${itemRows}</tbody></table><div class="totals"><div><span>Subtotal</span><span>${escapeHtml(formatInvoiceCurrency(invoice.subtotalCents, invoice.business.currencySymbol))}</span></div><div><span>Discount</span><span>${escapeHtml(formatInvoiceCurrency(invoice.discountAmountCents, invoice.business.currencySymbol))}</span></div><div class="total"><span>Total</span><span>${escapeHtml(formatInvoiceCurrency(invoice.totalAmountCents, invoice.business.currencySymbol))}</span></div></div>${invoice.notes ? `<div class="box"><strong>Notes</strong><div class="muted">${escapeHtml(invoice.notes)}</div></div>` : ""}</body></html>`);
-  printableWindow.document.close();
-  printableWindow.focus();
-  printableWindow.print();
 }
 
 function lineTotalCents(item: ItemFormState) {
@@ -365,18 +324,6 @@ export default function SalesScreen() {
       setError(caughtError instanceof Error ? caughtError.message : "Could not load invoice.");
     } finally {
       setInvoiceLoadingSaleId(null);
-    }
-  }
-
-  function handlePrintInvoice() {
-    if (selectedInvoice === null) {
-      return;
-    }
-
-    try {
-      printInvoice(selectedInvoice);
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Could not open invoice print window.");
     }
   }
 
@@ -704,85 +651,7 @@ export default function SalesScreen() {
         </div>
       </div>
 
-      {selectedInvoice ? (
-        <section className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm" aria-label="Invoice preview">
-          <div className="flex flex-col gap-3 border-b border-slate-200 dark:border-slate-700 pb-4 md:flex-row md:items-start md:justify-between">
-            <div>
-              <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Milestone 8 invoice preview</p>
-              <div className="mt-2 flex items-center gap-3">
-                <img alt="StyleCraft logo" className="h-12 w-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1" src={styleCraftLogoDataUri} />
-                <h3 className="text-2xl font-bold text-slate-950 dark:text-slate-50">Invoice {selectedInvoice.invoiceNumber}</h3>
-              </div>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{formatDate(selectedInvoice.saleDate)}</p>
-            </div>
-            <Button onClick={handlePrintInvoice} type="button" variant="ghost">
-              Print / Save PDF
-            </Button>
-          </div>
-
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-4">
-              <h4 className="font-semibold text-slate-950 dark:text-slate-50">Business</h4>
-              <p className="mt-2 font-medium text-slate-800">{selectedInvoice.business.businessName}</p>
-              <p className="text-sm text-slate-600 dark:text-slate-300">{selectedInvoice.business.phone ?? "No phone"}</p>
-              <p className="text-sm text-slate-600 dark:text-slate-300">{selectedInvoice.business.email ?? "No email"}</p>
-              <p className="text-sm text-slate-600 dark:text-slate-300">{selectedInvoice.business.address ?? "No address"}</p>
-            </div>
-            <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 p-4">
-              <h4 className="font-semibold text-slate-950 dark:text-slate-50">Customer</h4>
-              <p className="mt-2 font-medium text-slate-800">{selectedInvoice.customerName ?? "No customer"}</p>
-              <p className="text-sm text-slate-600 dark:text-slate-300">{selectedInvoice.customerPhone ?? "No phone"}</p>
-              <p className="text-sm text-slate-600 dark:text-slate-300">{selectedInvoice.customerEmail ?? "No email"}</p>
-              <p className="text-sm text-slate-600 dark:text-slate-300">{selectedInvoice.customerAddress ?? "No address"}</p>
-            </div>
-          </div>
-
-          <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
-            <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700 text-left text-sm">
-              <thead className="bg-slate-50 dark:bg-slate-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                <tr>
-                  <th className="px-4 py-3 font-semibold">Product</th>
-                  <th className="px-4 py-3 font-semibold">SKU</th>
-                  <th className="px-4 py-3 font-semibold">Qty</th>
-                  <th className="px-4 py-3 font-semibold">Unit price</th>
-                  <th className="px-4 py-3 font-semibold">Discount</th>
-                  <th className="px-4 py-3 font-semibold">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
-                {selectedInvoice.items.map((item) => (
-                  <tr key={item.id}>
-                    <td className="px-4 py-4 font-medium text-slate-950 dark:text-slate-50">
-                      {item.productName}
-                      {item.variantLabel && item.variantLabel !== "Standard" ? <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">{item.variantLabel}</span> : null}
-                    </td>
-                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{item.productSku}</td>
-                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{item.quantity}</td>
-                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{formatInvoiceCurrency(item.unitPriceCents, selectedInvoice.business.currencySymbol)}</td>
-                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{formatInvoiceCurrency(item.discountAmountCents, selectedInvoice.business.currencySymbol)}</td>
-                    <td className="px-4 py-4 font-semibold text-slate-950 dark:text-slate-50">{formatInvoiceCurrency(item.totalAmountCents, selectedInvoice.business.currencySymbol)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-4 grid gap-2 text-sm md:ml-auto md:w-80">
-            <div className="flex justify-between text-slate-600 dark:text-slate-300">
-              <span>Subtotal</span>
-              <span>{formatInvoiceCurrency(selectedInvoice.subtotalCents, selectedInvoice.business.currencySymbol)}</span>
-            </div>
-            <div className="flex justify-between text-slate-600 dark:text-slate-300">
-              <span>Discount</span>
-              <span>{formatInvoiceCurrency(selectedInvoice.discountAmountCents, selectedInvoice.business.currencySymbol)}</span>
-            </div>
-            <div className="flex justify-between border-t border-slate-200 dark:border-slate-700 pt-2 text-lg font-bold text-slate-950 dark:text-slate-50">
-              <span>Total</span>
-              <span>{formatInvoiceCurrency(selectedInvoice.totalAmountCents, selectedInvoice.business.currencySymbol)}</span>
-            </div>
-          </div>
-        </section>
-      ) : null}
+      {selectedInvoice === null ? null : <InvoicePreview invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} />}
     </div>
   );
 }

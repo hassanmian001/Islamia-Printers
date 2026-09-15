@@ -4,7 +4,7 @@ Desktop inventory management software for a small business with around 50 produc
 
 ## Current State
 
-SQLite persistence with the database layer, Electron IPC bridge, preload API, and screens for Products, Purchases, Sales, Returns, Ledger, Dashboard, Reports and Settings; invoice preview and printing; manual backup and restore; a Windows installer; and automatic updates from GitHub Releases.
+SQLite persistence with the database layer, Electron IPC bridge, preload API, and screens for Products, Purchases, Sales, Returns, Ledger, Dashboard, Reports and Settings; invoice preview, printing and PDF download; manual backup and restore; a Windows installer; and automatic updates from GitHub Releases.
 
 Stock is held per size and colour, sales and purchases can be left part paid and tracked on a khata, a recorded sale can be corrected behind a password, and the whole app has a dark mode.
 
@@ -58,6 +58,9 @@ Stock is held per size and colour, sales and purchases can be left part paid and
 - A balance is the opening balance plus invoices, minus payments and returns, so nothing is counted twice.
 - Udhaar from before this software is entered as an opening balance on the customer or supplier, and starts their khata.
 - Click a party to see a running statement, opening balance first, then every invoice, payment and return against them.
+- Open the invoice behind any khata line with View, to see what was bought on that date, in which size and colour, and at what price.
+- Open a customer's whole khata as one statement, with the items of every invoice underneath the running balance.
+- Download either document as a PDF, or print it.
 - Record a payment received or paid against an open balance.
 - Every account is listed, settled ones included, until the tick is taken off.
 - Sales left over from before v0.4.0, when an empty "Amount paid now" box meant paid in full, are listed for review and can be moved onto the customer's khata in one go.
@@ -72,9 +75,12 @@ Stock is held per size and colour, sales and purchases can be left part paid and
 ## Invoices
 
 - Use persisted sale invoice numbers.
-- View invoice details from sale history.
-- Show business settings, optional customer details, line items, discounts, and totals.
-- Open a printable invoice view for print or save-as-PDF.
+- View invoice details from sale history, and from any sale line in the ledger.
+- Show business settings, optional customer details, line items with size and colour, discounts, and totals.
+- A customer statement gathers the khata and every invoice's items into one document.
+- Download an invoice or statement as a PDF, or open a printable view for print or save-as-PDF.
+- Downloads go to the invoice folder set in Settings and never overwrite a file that is already there; "Save as..." picks a folder for one download.
+- "Open folder" shows a saved PDF in File Explorer, ready to attach to an email or a WhatsApp chat.
 
 ## Backup And Restore
 

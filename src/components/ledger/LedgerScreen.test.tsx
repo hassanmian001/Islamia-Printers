@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import LedgerScreen from "./LedgerScreen";
-import type { LedgerApi, LedgerStatementDto, LedgerSummaryDto, PaidInFullSaleDto } from "@/types/stylecraft-api";
+import type { CustomerStatementDto, InvoiceApi, InvoiceDetailDto, LedgerApi, LedgerStatementDto, LedgerSummaryDto, PaidInFullSaleDto } from "@/types/stylecraft-api";
 
 const summary: LedgerSummaryDto = {
   customers: [
@@ -24,8 +24,83 @@ const summary: LedgerSummaryDto = {
 const statement: LedgerStatementDto = {
   ...summary.customers[0],
   entries: [
-    { date: new Date("2026-08-01T00:00:00.000Z"), kind: "sale", reference: "INV-000001", description: "Sale invoice", debitCents: 10_000, creditCents: 0, balanceCents: 10_000 },
-    { date: new Date("2026-08-05T00:00:00.000Z"), kind: "payment", reference: "Cash", description: "Payment received", debitCents: 0, creditCents: 4_000, balanceCents: 6_000 },
+    { date: new Date("2026-08-01T00:00:00.000Z"), kind: "sale", reference: "INV-000001", description: "Sale invoice", saleId: 21, debitCents: 10_000, creditCents: 0, balanceCents: 10_000 },
+    { date: new Date("2026-08-05T00:00:00.000Z"), kind: "payment", reference: "Cash", description: "Payment received", saleId: null, debitCents: 0, creditCents: 4_000, balanceCents: 6_000 },
+  ],
+};
+
+const invoice: InvoiceDetailDto = {
+  saleId: 21,
+  invoiceNumber: "INV-000001",
+  saleDate: new Date("2026-08-01T00:00:00.000Z"),
+  customerName: "Ali",
+  customerPhone: "0300-1112222",
+  customerEmail: null,
+  customerAddress: null,
+  subtotalCents: 10_000,
+  discountAmountCents: 0,
+  totalAmountCents: 10_000,
+  paymentMethod: "Cash",
+  notes: null,
+  business: {
+  businessName: "StyleCraft Lahore",
+  phone: "0300-0000000",
+  email: "sales@stylecraft.test",
+  address: "Lahore",
+  currencySymbol: "Rs.",
+  invoicePrefix: "INV",
+},
+  items: [
+    {
+      id: 1,
+      productId: 5,
+      variantLabel: "M / Blue",
+      productName: "Oxford Shirt",
+      productSku: "OX-001-M-BLUE",
+      quantity: 2,
+      unitPriceCents: 5_000,
+      discountAmountCents: 0,
+      totalAmountCents: 10_000,
+    },
+  ],
+};
+
+const customerStatement: CustomerStatementDto = {
+  customerId: 1,
+  customerName: "Ali",
+  customerPhone: "0300-1112222",
+  customerEmail: null,
+  customerAddress: null,
+  generatedAt: new Date("2026-09-15T00:00:00.000Z"),
+  openingBalanceCents: 0,
+  invoicedCents: 10_000,
+  paidCents: 4_000,
+  returnedCents: 0,
+  balanceCents: 6_000,
+  business: {
+  businessName: "StyleCraft Lahore",
+  phone: "0300-0000000",
+  email: "sales@stylecraft.test",
+  address: "Lahore",
+  currencySymbol: "Rs.",
+  invoicePrefix: "INV",
+},
+  entries: [
+    {
+      ...statement.entries[0],
+      sale: {
+        saleId: 21,
+        invoiceNumber: "INV-000001",
+        saleDate: new Date("2026-08-01T00:00:00.000Z"),
+        subtotalCents: 10_000,
+        discountAmountCents: 0,
+        totalAmountCents: 10_000,
+        paymentMethod: "Cash",
+        notes: null,
+        items: invoice.items,
+      },
+    },
+    { ...statement.entries[1], sale: null },
   ],
 };
 
@@ -56,6 +131,7 @@ const paidInFullSales: PaidInFullSaleDto[] = [
 
 describe("LedgerScreen", () => {
   let ledgerApi: LedgerApi;
+  let invoicesApi: InvoiceApi;
 
   afterEach(() => {
     cleanup();
@@ -71,7 +147,17 @@ describe("LedgerScreen", () => {
       moveSalesToKhata: vi.fn().mockResolvedValue({ movedCount: 0, movedAmountCents: 0, skippedSaleIds: [] }),
     };
 
-    window.stylecraft = { ledger: ledgerApi } as unknown as typeof window.stylecraft;
+    invoicesApi = {
+      getBySaleId: vi.fn().mockResolvedValue(invoice),
+      getCustomerStatement: vi.fn().mockResolvedValue(customerStatement),
+      getFolder: vi.fn().mockResolvedValue({ folder: "D:/Invoices", isDefaultFolder: false }),
+      chooseFolder: vi.fn().mockResolvedValue(null),
+      updateFolder: vi.fn().mockResolvedValue({ folder: "D:/Invoices", isDefaultFolder: false }),
+      savePdf: vi.fn().mockResolvedValue({ filePath: "D:/Invoices/INV-000001 Ali.pdf", folder: "D:/Invoices" }),
+      reveal: vi.fn().mockResolvedValue(undefined),
+    };
+
+    window.stylecraft = { ledger: ledgerApi, invoices: invoicesApi } as unknown as typeof window.stylecraft;
   });
 
   it("lists every customer, settled ones included, so nobody goes missing", async () => {
@@ -159,6 +245,68 @@ describe("LedgerScreen", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Payment amount must be more than zero.");
     expect(ledgerApi.recordPayment).not.toHaveBeenCalled();
   });
+  it("opens the invoice behind a khata line, with every item on it", async () => {
+    render(<LedgerScreen />);
+
+    fireEvent.click((await screen.findByText("Ali")).closest("tr") as HTMLElement);
+    await screen.findByText("INV-000001");
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+
+    await waitFor(() => {
+      expect(invoicesApi.getBySaleId).toHaveBeenCalledWith(21);
+    });
+
+    const preview = await screen.findByRole("region", { name: "Invoice preview" });
+    expect(within(preview).getByText("Invoice INV-000001")).toBeInTheDocument();
+    expect(within(preview).getByText("Oxford Shirt")).toBeInTheDocument();
+    expect(within(preview).getByText("M / Blue")).toBeInTheDocument();
+  });
+
+  it("saves the open invoice as a PDF and says where it went", async () => {
+    render(<LedgerScreen />);
+
+    fireEvent.click((await screen.findByText("Ali")).closest("tr") as HTMLElement);
+    await screen.findByText("INV-000001");
+    fireEvent.click(screen.getByRole("button", { name: "View" }));
+
+    const preview = await screen.findByRole("region", { name: "Invoice preview" });
+    fireEvent.click(within(preview).getByRole("button", { name: "Download PDF" }));
+
+    await waitFor(() => {
+      expect(invoicesApi.savePdf).toHaveBeenCalledWith(expect.objectContaining({ fileName: "INV-000001 Ali", saveAs: false }));
+    });
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Saved to D:/Invoices/INV-000001 Ali.pdf");
+  });
+
+  it("opens the whole khata as one statement with the items under each invoice", async () => {
+    render(<LedgerScreen />);
+
+    fireEvent.click((await screen.findByText("Ali")).closest("tr") as HTMLElement);
+    await screen.findByText("INV-000001");
+    fireEvent.click(screen.getByRole("button", { name: "View full statement" }));
+
+    await waitFor(() => {
+      expect(invoicesApi.getCustomerStatement).toHaveBeenCalledWith(1);
+    });
+
+    const preview = await screen.findByRole("region", { name: "Account statement preview" });
+    expect(within(preview).getByText("Item details")).toBeInTheDocument();
+    expect(within(preview).getByText("Oxford Shirt")).toBeInTheDocument();
+    expect(within(preview).getByText("Balance due")).toBeInTheDocument();
+  });
+
+  it("keeps the full statement button away from supplier khatas", async () => {
+    render(<LedgerScreen />);
+
+    await screen.findByText("Ali");
+    fireEvent.click(screen.getByRole("button", { name: "We owe suppliers" }));
+    fireEvent.click((await screen.findByText("Fabric House")).closest("tr") as HTMLElement);
+
+    await screen.findByText("INV-000001");
+    expect(screen.queryByRole("button", { name: "View full statement" })).not.toBeInTheDocument();
+  });
+
   describe("sales recorded as paid in full", () => {
     it("stays out of the way when no sale is recorded as paid in full", async () => {
       render(<LedgerScreen />);

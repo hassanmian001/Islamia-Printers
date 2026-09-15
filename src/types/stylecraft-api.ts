@@ -539,8 +539,64 @@ export type InvoiceDetailDto = {
   items: InvoiceLineItemDto[];
 };
 
+/** One sale on a statement, with the lines that made it up. */
+export type StatementSaleDto = {
+  saleId: number;
+  invoiceNumber: string;
+  saleDate: Date;
+  subtotalCents: number;
+  discountAmountCents: number;
+  totalAmountCents: number;
+  paymentMethod: string | null;
+  notes: string | null;
+  items: InvoiceLineItemDto[];
+};
+
+export type StatementEntryDto = LedgerEntryDto & {
+  sale: StatementSaleDto | null;
+};
+
+export type CustomerStatementDto = {
+  customerId: number;
+  customerName: string;
+  customerPhone: string | null;
+  customerEmail: string | null;
+  customerAddress: string | null;
+  generatedAt: Date;
+  openingBalanceCents: number;
+  invoicedCents: number;
+  paidCents: number;
+  returnedCents: number;
+  balanceCents: number;
+  business: InvoiceBusinessSettingsDto;
+  entries: StatementEntryDto[];
+};
+
+export type InvoiceFolderDto = {
+  folder: string;
+  isDefaultFolder: boolean;
+};
+
+export type SavePdfInput = {
+  html: string;
+  fileName: string;
+  saveAs?: boolean;
+};
+
+/** `filePath` is null when the save dialog was closed without picking a file. */
+export type SavePdfResultDto = {
+  filePath: string | null;
+  folder: string;
+};
+
 export type InvoiceApi = {
   getBySaleId(saleId: number): Promise<InvoiceDetailDto>;
+  getCustomerStatement(customerId: number): Promise<CustomerStatementDto>;
+  getFolder(): Promise<InvoiceFolderDto>;
+  chooseFolder(): Promise<string | null>;
+  updateFolder(folder: string): Promise<InvoiceFolderDto>;
+  savePdf(input: SavePdfInput): Promise<SavePdfResultDto>;
+  reveal(filePath: string): Promise<void>;
 };
 
 export type BackupSettingsDto = {
@@ -647,6 +703,8 @@ export type LedgerEntryDto = {
   kind: "opening" | "sale" | "purchase" | "payment" | "sale_return" | "purchase_return";
   reference: string;
   description: string;
+  /** The sale behind this line, when there is one, so its invoice can be opened from the khata. */
+  saleId: number | null;
   debitCents: number;
   creditCents: number;
   balanceCents: number;

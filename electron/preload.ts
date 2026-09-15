@@ -29,6 +29,12 @@ const stylecraftApi: StyleCraftApi = {
   },
   invoices: {
     getBySaleId: (saleId) => ipcRenderer.invoke(invoiceChannels.getBySaleId, saleId),
+    getCustomerStatement: (customerId) => ipcRenderer.invoke(invoiceChannels.getCustomerStatement, customerId),
+    getFolder: () => ipcRenderer.invoke(invoiceChannels.getFolder),
+    chooseFolder: () => ipcRenderer.invoke(invoiceChannels.chooseFolder),
+    updateFolder: (folder) => ipcRenderer.invoke(invoiceChannels.updateFolder, folder),
+    savePdf: (input) => ipcRenderer.invoke(invoiceChannels.savePdf, input),
+    reveal: (filePath) => ipcRenderer.invoke(invoiceChannels.reveal, filePath),
   },
   ledger: {
     getSummary: () => ipcRenderer.invoke(ledgerChannels.getSummary),

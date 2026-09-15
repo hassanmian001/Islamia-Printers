@@ -27,6 +27,12 @@ export const contactsChannels = {
 
 export const invoiceChannels = {
   getBySaleId: "invoices:getBySaleId",
+  getCustomerStatement: "invoices:getCustomerStatement",
+  getFolder: "invoices:getFolder",
+  chooseFolder: "invoices:chooseFolder",
+  updateFolder: "invoices:updateFolder",
+  savePdf: "invoices:savePdf",
+  reveal: "invoices:reveal",
 } as const;
 
 export const productChannels = {
