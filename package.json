@@ -79,7 +79,7 @@
       {
         "provider": "github",
         "owner": "hassanmian001",
-        "repo": "islamia-printers",
+        "repo": "Islamia-Printers",
         "releaseType": "release"
       }
     ]
@@ -109,6 +109,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/hassanmian001/islamia-printers.git"
+    "url": "https://github.com/hassanmian001/Islamia-Printers.git"
   }
 }
