@@ -18,7 +18,7 @@ export type SavePdfResultDto = {
 };
 
 function defaultInvoiceFolder() {
-  return path.join(app.getPath("documents"), "StyleCraft Invoices");
+  return path.join(app.getPath("documents"), "Islamia Printers Invoices");
 }
 
 export function registerInvoiceHandlers(ipcMain: IpcMain) {

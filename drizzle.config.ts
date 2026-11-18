@@ -5,7 +5,7 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "sqlite",
   dbCredentials: {
-    url: ".local/stylecraft-dev.sqlite",
+    url: ".local/islamia-printers-dev.sqlite",
   },
   strict: true,
   verbose: true,

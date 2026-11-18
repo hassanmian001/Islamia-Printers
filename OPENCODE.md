@@ -2,7 +2,7 @@
 
 ## Project
 
-Build **StyleCraft Inventory Management Software**, a Windows desktop app for a small business with around 50 products.
+Build **Islamia Printers Sale/Purchase Software**, a Windows desktop app for a small business with around 50 products.
 
 The app must keep complete records of:
 

@@ -1,6 +1,6 @@
 # Agent Instructions
 
-This repository is for building **StyleCraft Inventory Management Software**.
+This repository is for building **Islamia Printers Sale/Purchase Software**.
 
 Before making code changes:
 

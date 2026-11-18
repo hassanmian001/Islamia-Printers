@@ -98,7 +98,7 @@ export function createBackup(databasePath: string, backupLocation?: string | nul
 
   fs.mkdirSync(backupDirectory, { recursive: true });
 
-  const backupPath = path.join(backupDirectory, `stylecraft-backup-${timestampForFileName(now)}.sqlite`);
+  const backupPath = path.join(backupDirectory, `islamia-printers-backup-${timestampForFileName(now)}.sqlite`);
 
   try {
     fs.copyFileSync(sourcePath, backupPath, fs.constants.COPYFILE_EXCL);

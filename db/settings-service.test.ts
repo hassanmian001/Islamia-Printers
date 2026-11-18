@@ -25,9 +25,9 @@ function makeTempDatabasePath() {
 describe("settings service", () => {
   it("returns PKR business defaults", () => {
     expect(getBusinessSettings(makeTempDatabasePath())).toEqual({
-      businessName: "StyleCraft",
-      phone: "+92 326 0609031",
-      email: "stylecraftpk.com@gmail.com",
+      businessName: "Islamia Printers",
+      phone: null,
+      email: null,
       address: null,
       currencySymbol: "Rs.",
       invoicePrefix: "INV",

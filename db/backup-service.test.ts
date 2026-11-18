@@ -64,7 +64,7 @@ describe("backup service", () => {
     const backup = createBackup(databasePath, backupDirectory, now);
 
     expect(backup.backupDirectory).toBe(path.resolve(backupDirectory));
-    expect(path.basename(backup.backupPath)).toMatch(/^stylecraft-backup-20260709-\d{6}-013\.sqlite$/);
+    expect(path.basename(backup.backupPath)).toMatch(/^islamia-printers-backup-20260709-\d{6}-013\.sqlite$/);
     expect(fs.existsSync(backup.backupPath)).toBe(true);
     expect(() => createBackup(databasePath, backupDirectory, now)).toThrow(BackupValidationError);
   });

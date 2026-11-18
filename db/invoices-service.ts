@@ -8,8 +8,8 @@ import { runMigrations } from "./migrate.js";
 import { formatVariantLabel } from "./products-service.js";
 import { customers, productVariants, products, saleItems, sales, settings } from "./schema.js";
 
-const defaultBusinessPhone = "+92 326 0609031";
-const defaultBusinessEmail = "stylecraftpk.com@gmail.com";
+const defaultBusinessPhone: string | null = null;
+const defaultBusinessEmail: string | null = null;
 const invoiceFolderKey = "invoice.folder";
 
 export type InvoiceBusinessSettingsDto = {
@@ -71,7 +71,7 @@ function getBusinessSettings(rows: Array<typeof settings.$inferSelect>): Invoice
   const values = new Map(rows.map((row) => [row.key, row.value]));
 
   return {
-    businessName: trimmedOrNull(values.get("business.name")) ?? "StyleCraft",
+    businessName: trimmedOrNull(values.get("business.name")) ?? "Islamia Printers",
     phone: trimmedOrNull(values.get("business.phone")) ?? defaultBusinessPhone,
     email: trimmedOrNull(values.get("business.email")) ?? defaultBusinessEmail,
     address: trimmedOrNull(values.get("business.address")),

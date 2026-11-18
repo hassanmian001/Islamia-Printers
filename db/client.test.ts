@@ -22,7 +22,7 @@ function makeTempDatabasePath() {
 
 describe("database paths", () => {
   it("defaults to the local development database path", () => {
-    expect(defaultDatabasePath.endsWith(path.join(".local", "stylecraft-dev.sqlite"))).toBe(true);
+    expect(defaultDatabasePath.endsWith(path.join(".local", "islamia-printers-dev.sqlite"))).toBe(true);
     expect(getDatabasePath()).toBe(defaultDatabasePath);
   });
 

@@ -1,5 +1,5 @@
 {
-  "project": "StyleCraft Inventory Management Software",
+  "project": "Islamia Printers Sale/Purchase Software",
   "goal": "Build a Windows desktop inventory management app for a small business with around 50 products.",
   "stack": {
     "desktop": "Electron",

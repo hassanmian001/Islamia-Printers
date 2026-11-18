@@ -26,7 +26,7 @@ async function promptRestart(window: BrowserWindow | undefined, version: string)
     defaultId: 0,
     cancelId: 1,
     title: "Update tayyar hai",
-    message: `StyleCraft Inventory ${version} download ho chuka hai.`,
+    message: `Islamia Printers ${version} download ho chuka hai.`,
     detail: "Restart karne par naya version install ho jayega. Aap chahen to baad mein bhi kar sakte hain — app band karte waqt khud install ho jayega.",
   };
 

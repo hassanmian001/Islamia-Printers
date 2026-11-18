@@ -130,9 +130,9 @@ describe("invoice service", () => {
     const sale = createSale(databasePath, makeSaleInput({ items: [{ variantId: product.variants[0].id, quantity: 1, unitPriceCents: 2_499 }] }));
 
     expect(getInvoiceBySaleId(databasePath, sale.id).business).toEqual({
-      businessName: "StyleCraft",
-      phone: "+92 326 0609031",
-      email: "stylecraftpk.com@gmail.com",
+      businessName: "Islamia Printers",
+      phone: null,
+      email: null,
       address: null,
       currencySymbol: "Rs.",
       invoicePrefix: "INV",

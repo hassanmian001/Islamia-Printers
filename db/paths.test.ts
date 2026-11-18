@@ -12,7 +12,7 @@ describe("database paths", () => {
     expect(getDatabasePath("custom.sqlite", "data-dir")).toBe(path.resolve("custom.sqlite"));
   });
 
-  it("uses stylecraft.sqlite inside the configured app data directory", () => {
-    expect(getDatabasePath(undefined, "data-dir")).toBe(path.resolve("data-dir", "stylecraft.sqlite"));
+  it("uses islamia-printers.sqlite inside the configured app data directory", () => {
+    expect(getDatabasePath(undefined, "data-dir")).toBe(path.resolve("data-dir", "islamia-printers.sqlite"));
   });
 });

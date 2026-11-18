@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { styleCraftEmail, styleCraftPhone } from "@/lib/branding";
 import { useTheme } from "@/lib/use-theme";
 import type { BackupResultDto, BackupSettingsDto, BusinessSettingsDto, EditPasswordStatusDto, InvoiceFolderDto, RestoreResultDto, ThemePreference, UpdateCheckResult } from "@/types/stylecraft-api";
 
 const defaultBusinessForm: BusinessSettingsDto = {
-  businessName: "StyleCraft",
-  phone: styleCraftPhone,
-  email: styleCraftEmail,
+  businessName: "Islamia Printers",
+  phone: null,
+  email: null,
   address: null,
   currencySymbol: "Rs.",
   invoicePrefix: "INV",

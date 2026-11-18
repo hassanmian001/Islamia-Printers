@@ -43,9 +43,9 @@ export default function App() {
         <aside className="border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 md:w-72 md:border-b-0 md:border-r">
           <div className="mb-6">
             <div className="flex items-center gap-3">
-              <img alt="StyleCraft logo" className="h-12 w-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1" src={styleCraftLogoDataUri} />
+              <img alt="Islamia Printers logo" className="h-12 w-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1" src={styleCraftLogoDataUri} />
               <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-600 dark:text-blue-400">StyleCraft</div>
+                <div className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-600 dark:text-blue-400">Islamia Printers</div>
                 <h1 className="mt-1 text-2xl font-bold tracking-tight">Inventory</h1>
               </div>
             </div>

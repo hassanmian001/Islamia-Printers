@@ -35,7 +35,7 @@ function createWindow() {
     height: 800,
     minWidth: 960,
     minHeight: 640,
-    title: "StyleCraft Inventory",
+    title: "Islamia Printers",
     backgroundColor: "#f8fafc",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),

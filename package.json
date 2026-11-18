@@ -1,10 +1,10 @@
 {
-  "name": "stylecraft-inventory-management",
-  "version": "0.5.0",
-  "description": "Windows desktop inventory management software for StyleCraft.",
+  "name": "islamia-printers",
+  "version": "1.0.0",
+  "description": "Windows desktop sale/purchase and stock software for Islamia Printers.",
   "main": "dist-electron/electron/main.js",
-  "productName": "StyleCraft Inventory",
-  "author": "StyleCraft",
+  "productName": "Islamia Printers",
+  "author": "Islamia Printers",
   "type": "module",
   "private": true,
   "scripts": {
@@ -41,8 +41,8 @@
     "tailwind-merge": "^2.6.0"
   },
   "build": {
-    "appId": "com.stylecraft.inventory",
-    "productName": "StyleCraft Inventory",
+    "appId": "com.islamiaprinters.app",
+    "productName": "Islamia Printers",
     "icon": "build/icon.ico",
     "npmRebuild": false,
     "directories": {
@@ -66,7 +66,7 @@
       "target": [
         "nsis"
       ],
-      "artifactName": "StyleCraft-Inventory-Setup-${version}.${ext}"
+      "artifactName": "Islamia-Printers-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -79,7 +79,7 @@
       {
         "provider": "github",
         "owner": "hassanmian001",
-        "repo": "stylecraft-inventory",
+        "repo": "islamia-printers",
         "releaseType": "release"
       }
     ]
@@ -109,6 +109,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/hassanmian001/stylecraft-inventory.git"
+    "url": "https://github.com/hassanmian001/islamia-printers.git"
   }
 }

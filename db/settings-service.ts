@@ -2,8 +2,8 @@ import { createDb } from "./client.js";
 import { runMigrations } from "./migrate.js";
 import { settings } from "./schema.js";
 
-const defaultBusinessPhone = "+92 326 0609031";
-const defaultBusinessEmail = "stylecraftpk.com@gmail.com";
+const defaultBusinessPhone: string | null = null;
+const defaultBusinessEmail: string | null = null;
 
 export type BusinessSettingsDto = {
   businessName: string;
@@ -65,7 +65,7 @@ function rowsToBusinessSettings(rows: Array<typeof settings.$inferSelect>): Busi
   const values = new Map(rows.map((row) => [row.key, row.value]));
 
   return {
-    businessName: trimmedOrNull(values.get(businessSettingKeys.businessName)) ?? "StyleCraft",
+    businessName: trimmedOrNull(values.get(businessSettingKeys.businessName)) ?? "Islamia Printers",
     phone: trimmedOrNull(values.get(businessSettingKeys.phone)) ?? defaultBusinessPhone,
     email: trimmedOrNull(values.get(businessSettingKeys.email)) ?? defaultBusinessEmail,
     address: trimmedOrNull(values.get(businessSettingKeys.address)),

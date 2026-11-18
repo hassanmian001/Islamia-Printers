@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export const defaultDatabasePath = path.resolve(process.cwd(), ".local", "stylecraft-dev.sqlite");
+export const defaultDatabasePath = path.resolve(process.cwd(), ".local", "islamia-printers-dev.sqlite");
 
 export function getDatabasePath(customPath = process.env.STYLECRAFT_DB_PATH, dataDirectory = process.env.STYLECRAFT_DATA_DIR) {
   if (customPath?.trim()) {
@@ -9,7 +9,7 @@ export function getDatabasePath(customPath = process.env.STYLECRAFT_DB_PATH, dat
   }
 
   if (dataDirectory?.trim()) {
-    return path.resolve(dataDirectory, "stylecraft.sqlite");
+    return path.resolve(dataDirectory, "islamia-printers.sqlite");
   }
 
   return defaultDatabasePath;

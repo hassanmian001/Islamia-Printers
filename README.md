@@ -1,6 +1,6 @@
-# StyleCraft Inventory Management Software
+# Islamia Printers Sale/Purchase Software
 
-Desktop inventory management software for a small business with around 50 products.
+Desktop sale/purchase, stock and khata software for Islamia Printers, cloned from the StyleCraft Inventory codebase.
 
 ## Current State
 
@@ -97,7 +97,7 @@ Stock is held per size and colour, sales and purchases can be left part paid and
 ## Windows Packaging
 
 - Build a Windows NSIS installer with electron-builder.
-- Store packaged app data in Electron's user data directory as `stylecraft.sqlite`.
+- Store packaged app data in Electron's user data directory as `islamia-printers.sqlite`.
 - Ship Drizzle migrations with the packaged app resources.
 - Write installer artifacts to `release/`.
 
@@ -159,7 +159,7 @@ Verify the database with a sample query:
 npm run db:verify
 ```
 
-The development database is created at `.local/stylecraft-dev.sqlite`. The packaged app uses Electron's user data directory and stores data in `stylecraft.sqlite`.
+The development database is created at `.local/islamia-printers-dev.sqlite`. The packaged app uses Electron's user data directory and stores data in `islamia-printers.sqlite`.
 
 ## Planned Features
 

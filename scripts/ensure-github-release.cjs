@@ -25,7 +25,7 @@ function request(method, path, body) {
         headers: {
           accept: "application/vnd.github+json",
           authorization: `Bearer ${token}`,
-          "user-agent": "stylecraft-release-script",
+          "user-agent": "islamia-printers-release-script",
           ...(payload ? { "content-type": "application/json", "content-length": Buffer.byteLength(payload) } : {}),
         },
       },

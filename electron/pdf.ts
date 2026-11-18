@@ -11,7 +11,7 @@ import path from "node:path";
  * off: the pages we print are static markup.
  */
 export async function renderHtmlToPdf(html: string): Promise<Buffer> {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "stylecraft-pdf-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "islamia-printers-pdf-"));
   const htmlPath = path.join(directory, "document.html");
   fs.writeFileSync(htmlPath, html, "utf8");
 
