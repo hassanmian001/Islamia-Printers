@@ -1,42 +1,49 @@
 import { styleCraftLogoDataUri } from "@/lib/branding";
 import { formatCurrency } from "@/lib/currency";
-import type { CustomerStatementDto, InvoiceBusinessSettingsDto, InvoiceDetailDto, InvoiceLineItemDto, StatementEntryDto } from "@/types/stylecraft-api";
+import { formatAmount, formatAmountOrBlank, formatDate, formatQty, formatRate } from "@/lib/format";
+import { workKinds, workLabels } from "@/lib/job-math";
+import type { BillDocumentDto, BusinessDocumentSettingsDto, LedgerStatementDto, WorkAmounts, WorkCharge } from "@/types/stylecraft-api";
 
-const entryLabels: Record<StatementEntryDto["kind"], string> = {
-  opening: "Opening balance",
-  sale: "Sale",
-  purchase: "Purchase",
-  payment: "Payment",
-  sale_return: "Sale return",
-  purchase_return: "Purchase return",
-};
-
-const documentStyles = `
+const baseStyles = `
   *{box-sizing:border-box}
-  body{font-family:Arial,Helvetica,sans-serif;margin:28px;color:#0f172a;font-size:13px}
-  h1{font-size:22px;margin:0}
-  h2{font-size:18px;margin:0}
-  h3{font-size:14px;margin:26px 0 8px}
-  .header{display:flex;justify-content:space-between;gap:24px;border-bottom:2px solid #0f172a;padding-bottom:16px}
-  .brand{display:flex;align-items:center;gap:14px}
-  .logo{width:58px;height:58px;object-fit:contain}
-  .muted{color:#475569;font-size:12px}
+  body{font-family:Arial,Helvetica,sans-serif;margin:24px;color:#0f172a;font-size:12px}
+  h1{font-size:20px;margin:0}
+  h2{font-size:17px;margin:0}
+  .header{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;padding-bottom:10px;border-bottom:2px solid #0f172a}
+  .brand{display:flex;align-items:center;gap:12px}
+  .logo{width:52px;height:52px;object-fit:contain}
+  .muted{color:#475569;font-size:11px}
   .right{text-align:right}
-  .boxes{display:flex;gap:16px;margin-top:18px}
-  .box{flex:1;border:1px solid #cbd5e1;border-radius:10px;padding:12px}
-  .box strong{display:block;margin-bottom:4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#334155}
-  table{border-collapse:collapse;width:100%;margin-top:8px;font-size:12px}
-  th,td{border:1px solid #cbd5e1;padding:7px 8px;text-align:left;vertical-align:top}
-  th{background:#f1f5f9;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  table{border-collapse:collapse;width:100%;margin-top:10px}
+  th,td{border:1px solid #94a3b8;padding:4px 6px;text-align:left;vertical-align:top}
+  th{background:#f1f5f9;font-size:11px}
   td.num,th.num{text-align:right;white-space:nowrap}
+  .sub{font-size:10px;color:#64748b;white-space:nowrap}
+  .foot{margin-top:22px;font-size:10px;color:#64748b;display:flex;justify-content:space-between}
+`;
+
+const ledgerStyles = `
+  @page{size:A4 landscape;margin:10mm}
+  body{margin:12px;font-size:11px}
+  .period{margin-top:6px;font-size:12px}
+  .account{margin-top:10px;border:1px solid #0f172a;padding:6px 10px;font-size:14px;font-weight:700;font-style:italic}
+  table{font-size:11px}
+  th.c-date{width:74px}th.c-vno{width:62px}th.c-job{width:20%}
+  tr.subtotal td{font-weight:700;background:#f8fafc}
+  tr.subtotal td.label{text-align:right}
+  tr.grand td{font-weight:700;border-top:2px solid #0f172a;background:#e2e8f0}
+  tr.opening td,tr.payment td{background:#fff}
+  .final{margin-top:14px;display:flex;justify-content:flex-end;gap:40px;font-size:14px;font-weight:700}
+  .signatures{margin-top:56px;display:flex;justify-content:space-between}
+  .signatures div{border-top:1px solid #0f172a;padding-top:4px;width:160px;text-align:center;font-weight:700}
+`;
+
+const billStyles = `
+  .boxes{display:flex;gap:16px;margin-top:14px}
+  .box{flex:1;border:1px solid #cbd5e1;border-radius:8px;padding:10px}
+  .box strong{display:block;margin-bottom:4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#334155}
   tfoot td{font-weight:700;background:#f8fafc}
-  .totals{margin-left:auto;margin-top:14px;width:290px}
-  .totals div{display:flex;justify-content:space-between;padding:5px 0}
-  .totals .total{font-weight:700;border-top:1px solid #cbd5e1;font-size:15px}
-  .sale{margin-top:18px;border:1px solid #cbd5e1;border-radius:10px;padding:12px;page-break-inside:avoid}
-  .sale-head{display:flex;justify-content:space-between;gap:12px;font-weight:700}
-  .due{margin-top:18px;border:2px solid #0f172a;border-radius:10px;padding:12px;display:flex;justify-content:space-between;font-size:16px;font-weight:700}
-  .foot{margin-top:26px;border-top:1px solid #cbd5e1;padding-top:10px;font-size:11px;color:#64748b;text-align:center}
+  .total{margin-left:auto;margin-top:12px;width:280px;display:flex;justify-content:space-between;border:2px solid #0f172a;border-radius:8px;padding:8px 10px;font-size:15px;font-weight:700}
 `;
 
 export function escapeHtml(value: string | number | null | undefined) {
@@ -48,8 +55,8 @@ export function escapeHtml(value: string | number | null | undefined) {
     .replaceAll("'", "&#039;");
 }
 
-export function formatDocumentDate(value: Date) {
-  return new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(new Date(value));
+export function formatDocumentDate(value: Date | string) {
+  return formatDate(value);
 }
 
 function lines(values: Array<string | null | undefined>) {
@@ -59,99 +66,127 @@ function lines(values: Array<string | null | undefined>) {
     .join("");
 }
 
-function header(business: InvoiceBusinessSettingsDto, title: string, subtitleLines: Array<string | null>) {
-  return `<div class="header"><div class="brand"><img class="logo" src="${styleCraftLogoDataUri}" alt="logo"><div><h1>${escapeHtml(business.businessName)}</h1><div class="muted">${lines([business.phone, business.email, business.address])}</div></div></div><div class="right"><h2>${escapeHtml(title)}</h2><div class="muted">${lines(subtitleLines)}</div></div></div>`;
+function header(business: BusinessDocumentSettingsDto, title: string, subtitleLines: Array<string | null>) {
+  return `<div class="header"><div class="brand"><img class="logo" src="${styleCraftLogoDataUri}" alt="logo"><div><h1>${escapeHtml(business.businessName)}</h1><div class="muted">${lines([business.address, business.phone, business.email])}</div></div></div><div class="right"><h2>${escapeHtml(title)}</h2><div class="muted">${lines(subtitleLines)}</div></div></div>`;
 }
 
-function itemRows(items: InvoiceLineItemDto[], currencySymbol: string) {
-  if (items.length === 0) {
-    return `<tr><td colspan="7">No items on this invoice.</td></tr>`;
+function page(title: string, styles: string, body: string) {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${baseStyles}${styles}</style></head><body>${body}</body></html>`;
+}
+
+/** One kind of work in a cell: the amount, with "qty x rate" underneath so the figure can be checked. */
+function workCell(charge: WorkCharge) {
+  if (charge.amountCents === 0 && charge.qty === 0) {
+    return `<td class="num"></td>`;
   }
 
-  return items
-    .map((item, index) => {
-      const money = (cents: number) => escapeHtml(formatCurrency(cents, currencySymbol));
-
-      return `<tr><td class="num">${index + 1}</td><td>${escapeHtml(item.productName)}<div class="muted">${escapeHtml(item.productSku)}</div></td><td>${escapeHtml(item.variantLabel)}</td><td class="num">${item.quantity}</td><td class="num">${money(item.unitPriceCents)}</td><td class="num">${money(item.discountAmountCents)}</td><td class="num">${money(item.totalAmountCents)}</td></tr>`;
-    })
-    .join("");
+  return `<td class="num">${escapeHtml(formatAmountOrBlank(charge.amountCents))}<div class="sub">${escapeHtml(formatQty(charge.qty))} × ${escapeHtml(formatRate(charge.rateCents))}</div></td>`;
 }
 
-function itemsTable(items: InvoiceLineItemDto[], currencySymbol: string) {
-  const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
-  const totalCents = items.reduce((sum, item) => sum + item.totalAmountCents, 0);
-
-  return `<table><thead><tr><th class="num">#</th><th>Item</th><th>Size / colour</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Discount</th><th class="num">Amount</th></tr></thead><tbody>${itemRows(items, currencySymbol)}</tbody><tfoot><tr><td colspan="3">Total</td><td class="num">${totalQuantity}</td><td class="num"></td><td class="num"></td><td class="num">${escapeHtml(formatCurrency(totalCents, currencySymbol))}</td></tr></tfoot></table>`;
+function workTotalCells(totals: WorkAmounts) {
+  return workKinds.map((kind) => `<td class="num">${escapeHtml(formatAmountOrBlank(totals[kind]))}</td>`).join("");
 }
 
-function page(title: string, body: string) {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${documentStyles}</style></head><body>${body}</body></html>`;
+const workHeaders = workKinds.map((kind) => `<th class="num">${escapeHtml(workLabels[kind])}</th>`).join("");
+
+export function billNumberLabel(billNumber: number) {
+  return `${billNumber} SV`;
 }
 
-/** The single-sale invoice: who bought what, in which size, at what price. */
-export function buildInvoiceHtml(invoice: InvoiceDetailDto) {
-  const { currencySymbol } = invoice.business;
-  const money = (cents: number) => escapeHtml(formatCurrency(cents, currencySymbol));
-  const billTo = lines([invoice.customerName, invoice.customerPhone, invoice.customerEmail, invoice.customerAddress]) || "<div>Walk-in customer</div>";
-
-  const body = `${header(invoice.business, `Invoice ${invoice.invoiceNumber}`, [`Date: ${formatDocumentDate(invoice.saleDate)}`, `Payment: ${invoice.paymentMethod ?? "-"}`])}
-    <div class="boxes"><div class="box"><strong>Bill to</strong><div class="muted">${billTo}</div></div></div>
-    ${itemsTable(invoice.items, currencySymbol)}
-    <div class="totals"><div><span>Subtotal</span><span>${money(invoice.subtotalCents)}</span></div><div><span>Discount</span><span>${money(invoice.discountAmountCents)}</span></div><div class="total"><span>Total</span><span>${money(invoice.totalAmountCents)}</span></div></div>
-    ${invoice.notes ? `<div class="box" style="margin-top:18px"><strong>Notes</strong><div class="muted">${escapeHtml(invoice.notes)}</div></div>` : ""}
-    <div class="foot">Thank you for shopping with ${escapeHtml(invoice.business.businessName)}.</div>`;
-
-  return page(`Invoice ${invoice.invoiceNumber}`, body);
+export function receiptNumberLabel(receiptNumber: number) {
+  return `${receiptNumber} CR`;
 }
 
-function statementEntryRows(entries: StatementEntryDto[], currencySymbol: string) {
-  if (entries.length === 0) {
-    return `<tr><td colspan="6">No entries yet.</td></tr>`;
-  }
-
-  return entries
-    .map((entry) => {
-      const money = (cents: number) => (cents === 0 ? "-" : escapeHtml(formatCurrency(cents, currencySymbol)));
-
-      return `<tr><td>${escapeHtml(formatDocumentDate(entry.date))}</td><td>${escapeHtml(entryLabels[entry.kind])}</td><td>${escapeHtml(entry.reference)}</td><td class="num">${money(entry.debitCents)}</td><td class="num">${money(entry.creditCents)}</td><td class="num">${escapeHtml(formatCurrency(entry.balanceCents, currencySymbol))}</td></tr>`;
-    })
-    .join("");
-}
-
-/** The whole khata in one document: the running balance, then every sale's items underneath it. */
-export function buildStatementHtml(statement: CustomerStatementDto) {
-  const { currencySymbol } = statement.business;
-  const money = (cents: number) => escapeHtml(formatCurrency(cents, currencySymbol));
-
-  const saleSections = statement.entries
-    .map((entry) => entry.sale)
-    .filter((sale): sale is NonNullable<StatementEntryDto["sale"]> => sale !== null)
+/** A single bill: the shop, the customer, every job with each kind of work as qty x rate, and the bill total. */
+export function buildBillHtml(bill: BillDocumentDto) {
+  const { currencySymbol } = bill.business;
+  const rows = bill.jobs
     .map(
-      (sale) =>
-        `<div class="sale"><div class="sale-head"><span>Invoice ${escapeHtml(sale.invoiceNumber)}</span><span>${escapeHtml(formatDocumentDate(sale.saleDate))}</span></div>${itemsTable(sale.items, currencySymbol)}<div class="totals"><div><span>Subtotal</span><span>${money(sale.subtotalCents)}</span></div><div><span>Discount</span><span>${money(sale.discountAmountCents)}</span></div><div class="total"><span>Invoice total</span><span>${money(sale.totalAmountCents)}</span></div></div></div>`,
+      (job, index) =>
+        `<tr><td class="num">${index + 1}</td><td>${escapeHtml(job.jobName)}</td>${workKinds.map((kind) => workCell(job[kind])).join("")}<td class="num"><strong>${escapeHtml(formatAmount(job.totalAmountCents))}</strong></td></tr>`,
     )
     .join("");
+  const totals = Object.fromEntries(workKinds.map((kind) => [kind, bill.jobs.reduce((sum, job) => sum + job[kind].amountCents, 0)])) as WorkAmounts;
 
-  const body = `${header(statement.business, "Account statement", [`Prepared: ${formatDocumentDate(statement.generatedAt)}`])}
-    <div class="boxes">
-      <div class="box"><strong>Customer</strong><div class="muted">${lines([statement.customerName, statement.customerPhone, statement.customerEmail, statement.customerAddress])}</div></div>
-      <div class="box"><strong>Summary</strong><div class="muted"><div>Opening balance: ${money(statement.openingBalanceCents)}</div><div>Invoiced: ${money(statement.invoicedCents)}</div><div>Paid: ${money(statement.paidCents)}</div><div>Returned: ${money(statement.returnedCents)}</div></div></div>
-    </div>
-    <h3>Khata</h3>
-    <table><thead><tr><th>Date</th><th>Entry</th><th>Reference</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th></tr></thead><tbody>${statementEntryRows(statement.entries, currencySymbol)}</tbody></table>
-    <div class="due"><span>${statement.balanceCents > 0 ? "Balance due" : "Balance"}</span><span>${money(statement.balanceCents)}</span></div>
-    ${saleSections ? `<h3>Item details</h3>${saleSections}` : ""}
-    <div class="foot">Thank you for shopping with ${escapeHtml(statement.business.businessName)}.</div>`;
+  const body = `${header(bill.business, `Bill No. ${bill.billNumber}`, [`Date: ${formatDocumentDate(bill.saleDate)}`])}
+    <div class="boxes"><div class="box"><strong>Bill to</strong><div class="muted">${lines([bill.customerName, bill.customerPhone, bill.customerAddress])}</div></div></div>
+    <table><thead><tr><th class="num">#</th><th>Job name</th>${workHeaders}<th class="num">Grand Total</th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr><td colspan="2">Total</td>${workTotalCells(totals)}<td class="num">${escapeHtml(formatAmount(bill.totalAmountCents))}</td></tr></tfoot></table>
+    <div class="total"><span>Bill total</span><span>${escapeHtml(formatCurrency(bill.totalAmountCents, currencySymbol))}</span></div>
+    ${bill.notes ? `<div class="box" style="margin-top:14px"><strong>Notes</strong><div class="muted">${escapeHtml(bill.notes)}</div></div>` : ""}
+    <div class="foot"><span>Thank you for your business — ${escapeHtml(bill.business.businessName)}</span><span>Printed ${escapeHtml(formatDocumentDate(new Date()))}</span></div>`;
 
-  return page(`Statement ${statement.customerName}`, body);
+  return page(`Bill ${bill.billNumber}`, billStyles, body);
 }
 
-export function invoiceDocumentFileName(invoice: InvoiceDetailDto) {
-  return `${invoice.invoiceNumber} ${invoice.customerName ?? "Walk-in"}`;
+function dayBefore(day: string) {
+  const date = new Date(`${day}T00:00:00`);
+  date.setDate(date.getDate() - 1);
+  return date;
 }
 
-export function statementDocumentFileName(statement: CustomerStatementDto) {
-  return `Statement ${statement.customerName} ${formatDocumentDate(statement.generatedAt)}`;
+function periodLabel(statement: LedgerStatementDto) {
+  const from = statement.startDate ? formatDocumentDate(new Date(`${statement.startDate}T00:00:00`)) : "Beginning";
+  const to = statement.endDate ? formatDocumentDate(new Date(`${statement.endDate}T00:00:00`)) : formatDocumentDate(statement.generatedAt);
+
+  return { from, to };
+}
+
+/**
+ * The customer's statement of account, laid out like a paper khata: opening
+ * balance, then each bill job by job closed by a sub-total, payments in between,
+ * a grand total and the final balance.
+ */
+export function buildLedgerHtml(statement: LedgerStatementDto) {
+  const money = (cents: number) => escapeHtml(formatAmount(cents));
+  const blank = (cents: number) => escapeHtml(formatAmountOrBlank(cents));
+  const { from, to } = periodLabel(statement);
+  const columnCount = 3 + workKinds.length + 3;
+
+  const openingDate = statement.startDate ? formatDocumentDate(dayBefore(statement.startDate)) : "";
+  const openingRow = `<tr class="opening"><td>${escapeHtml(openingDate)}</td><td>OB</td><td>********** Opening Balance **********</td>${workKinds.map(() => "<td></td>").join("")}<td></td><td></td><td class="num">${money(statement.openingBalanceCents)}</td></tr>`;
+
+  const entryRows = statement.entries
+    .map((entry) => {
+      if (entry.kind === "payment") {
+        return `<tr class="payment"><td>${escapeHtml(formatDocumentDate(entry.date))}</td><td>${escapeHtml(receiptNumberLabel(entry.receiptNumber))}</td><td>${escapeHtml(entry.narration ?? "Payment received")}</td>${workKinds.map(() => "<td></td>").join("")}<td></td><td class="num">${money(entry.amountCents)}</td><td class="num">${money(entry.balanceCents)}</td></tr>`;
+      }
+
+      const jobRows = entry.jobs
+        .map(
+          (job) =>
+            `<tr><td>${escapeHtml(formatDocumentDate(entry.date))}</td><td>${escapeHtml(billNumberLabel(entry.billNumber))}</td><td>${escapeHtml(job.jobName)}</td>${workKinds.map((kind) => workCell(job[kind])).join("")}<td class="num">${money(job.totalAmountCents)}</td><td></td><td class="num">${money(job.balanceCents)}</td></tr>`,
+        )
+        .join("");
+
+      return `${jobRows}<tr class="subtotal"><td class="label" colspan="3">Sub-Total &gt;&gt;&gt;&gt;&gt;</td>${workTotalCells(entry.workTotals)}<td class="num">${money(entry.totalAmountCents)}</td><td></td><td class="num">${money(entry.balanceCents)}</td></tr>`;
+    })
+    .join("");
+
+  const emptyRow = statement.entries.length === 0 ? `<tr><td colspan="${columnCount}">No bills or payments in this period.</td></tr>` : "";
+  const grandRow = `<tr class="grand"><td colspan="3">Grand Total</td>${workTotalCells(statement.workTotals)}<td class="num">${blank(statement.debitCents)}</td><td class="num">${blank(statement.creditCents)}</td><td class="num">${money(statement.closingBalanceCents)}</td></tr>`;
+
+  const body = `${header(statement.business, "Statement of Account", [])}
+    <div class="period"><strong>From Date:</strong> ${escapeHtml(from)} &nbsp;&nbsp; <strong>To Date:</strong> ${escapeHtml(to)}</div>
+    <div class="account">A/C No. ${escapeHtml(statement.customer.id)} &nbsp;&nbsp;&nbsp; A/C Title : ${escapeHtml(statement.customer.name)} ${escapeHtml(statement.customer.phone ?? "")}</div>
+    <table><thead><tr><th class="c-date">Date</th><th class="c-vno">V/NO</th><th class="c-job">Job Name / Narration</th>${workHeaders}<th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th></tr></thead>
+    <tbody>${openingRow}${entryRows}${emptyRow}${grandRow}</tbody></table>
+    <div class="final"><span>Final Balance &gt;&gt;&gt;&gt;&gt; :</span><span>${money(statement.closingBalanceCents)}</span></div>
+    <div class="signatures"><div>Prepared by</div><div>Checked by</div><div>Received by</div></div>
+    <div class="foot"><span>Date &amp; Time : ${escapeHtml(new Intl.DateTimeFormat("en-GB", { dateStyle: "short", timeStyle: "short" }).format(new Date(statement.generatedAt)))}</span><span>${escapeHtml(statement.business.businessName)}</span></div>`;
+
+  return page(`Ledger ${statement.customer.name}`, ledgerStyles, body);
+}
+
+export function billDocumentFileName(bill: BillDocumentDto) {
+  return `Bill ${bill.billNumber} ${bill.customerName}`;
+}
+
+export function ledgerDocumentFileName(statement: LedgerStatementDto) {
+  const { from, to } = periodLabel(statement);
+
+  return `Ledger ${statement.customer.name} ${from} to ${to}`.replaceAll("/", "-");
 }
 
 /** Opens the document in a print window, for a paper copy or the browser's own Save as PDF. */

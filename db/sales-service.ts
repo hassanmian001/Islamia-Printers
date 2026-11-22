@@ -1,80 +1,11 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 
+import { jobTotalCents, workAmountCents, workKinds, type WorkKind } from "../src/lib/job-math.js";
+import type { SaleDetailDto, SaleHistoryDto, SaleInput, SaleJobDto, SaleListFilters } from "../src/types/stylecraft-api.js";
 import { createDb } from "./client.js";
+import { endOfDayExclusive, normalizeEntryDate, parseDay } from "./dates.js";
 import { runMigrations } from "./migrate.js";
-import { formatVariantLabel, rollupProductStock } from "./products-service.js";
-import { auditLogs, customers, payments, productVariants, products, saleItems, saleReturns, sales, stockMovements } from "./schema.js";
-import { effectivePurchasePriceCents, loadVariantWithProduct } from "./variant-lookup.js";
-
-export type CustomerInput = {
-  name: string;
-  phone?: string | null;
-  email?: string | null;
-  address?: string | null;
-  notes?: string | null;
-};
-
-export type CustomerDto = CustomerInput & {
-  id: number;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-export type SaleItemInput = {
-  variantId: number;
-  quantity: number;
-  unitPriceCents: number;
-  discountAmountCents?: number;
-};
-
-export type SaleInput = {
-  customerId?: number | null;
-  customerName?: string | null;
-  saleDate: Date | string;
-  amountPaidCents?: number;
-  paymentMethod?: string | null;
-  notes?: string | null;
-  items: SaleItemInput[];
-};
-
-export type SaleItemDto = {
-  id: number;
-  productId: number;
-  variantId: number | null;
-  productName: string;
-  productSku: string;
-  variantLabel: string;
-  variantSku: string | null;
-  quantity: number;
-  unitPriceCents: number;
-  unitCostCents: number;
-  discountAmountCents: number;
-  totalAmountCents: number;
-  profitAmountCents: number;
-};
-
-export type SaleDetailDto = {
-  id: number;
-  invoiceNumber: string;
-  customerId: number | null;
-  customerName: string | null;
-  saleDate: Date;
-  subtotalCents: number;
-  discountAmountCents: number;
-  totalAmountCents: number;
-  profitAmountCents: number;
-  amountPaidCents: number;
-  balanceDueCents: number;
-  paymentMethod: string | null;
-  notes: string | null;
-  items: SaleItemDto[];
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-export type SaleHistoryDto = Omit<SaleDetailDto, "items"> & {
-  itemCount: number;
-};
+import { auditLogs, customers, saleJobs, sales } from "./schema.js";
 
 export class SaleValidationError extends Error {
   constructor(message: string) {
@@ -86,400 +17,231 @@ export class SaleValidationError extends Error {
 type Db = ReturnType<typeof createDb>["db"];
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type DbClient = Db | Tx;
+type SaleJobRow = typeof saleJobs.$inferSelect;
+
+const columnsByKind = {
+  rota: { qty: "rotaQty", rate: "rotaRateCents", amount: "rotaAmountCents" },
+  gto: { qty: "gtoQty", rate: "gtoRateCents", amount: "gtoAmountCents" },
+  cutting: { qty: "cuttingQty", rate: "cuttingRateCents", amount: "cuttingAmountCents" },
+  lamination: { qty: "laminationQty", rate: "laminationRateCents", amount: "laminationAmountCents" },
+  dye: { qty: "dyeQty", rate: "dyeRateCents", amount: "dyeAmountCents" },
+} as const satisfies Record<WorkKind, { qty: keyof SaleJobRow; rate: keyof SaleJobRow; amount: keyof SaleJobRow }>;
+
+const workNames: Record<WorkKind, string> = {
+  rota: "Rota P",
+  gto: "GTO P",
+  cutting: "Cutting",
+  lamination: "Lamination",
+  dye: "Dye",
+};
 
 function nullableTrimmed(value: string | null | undefined) {
   return value?.trim() || null;
 }
 
-function validatePositiveInteger(value: number, fieldName: string) {
+function validateId(value: number, label: string) {
   if (!Number.isInteger(value) || value <= 0) {
-    throw new SaleValidationError(`${fieldName} must be a positive whole number.`);
+    throw new SaleValidationError(`${label} must be selected.`);
   }
-}
-
-function validateNonNegativeInteger(value: number, fieldName: string) {
-  if (!Number.isInteger(value) || value < 0) {
-    throw new SaleValidationError(`${fieldName} must be a non-negative whole number.`);
-  }
-}
-
-function normalizeSaleDate(value: Date | string) {
-  const date = value instanceof Date ? value : new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    throw new SaleValidationError("Sale date is required.");
-  }
-
-  return date;
-}
-
-function normalizeCustomerInput(input: CustomerInput) {
-  const name = input.name.trim();
-
-  if (!name) {
-    throw new SaleValidationError("Customer name is required.");
-  }
-
-  return {
-    name,
-    phone: nullableTrimmed(input.phone),
-    email: nullableTrimmed(input.email),
-    address: nullableTrimmed(input.address),
-    notes: nullableTrimmed(input.notes),
-  };
 }
 
 function normalizeSaleInput(input: SaleInput) {
-  const saleDate = normalizeSaleDate(input.saleDate);
-  const customerName = nullableTrimmed(input.customerName);
-  const paymentMethod = nullableTrimmed(input.paymentMethod);
-  const notes = nullableTrimmed(input.notes);
+  validateId(input.customerId, "Customer");
 
-  if (input.customerId !== null && input.customerId !== undefined) {
-    validatePositiveInteger(input.customerId, "Customer");
+  let saleDate: Date;
+
+  try {
+    saleDate = normalizeEntryDate(input.saleDate, "Sale date");
+  } catch (error) {
+    throw new SaleValidationError(error instanceof Error ? error.message : "Sale date is required.");
   }
 
-  if (!Array.isArray(input.items) || input.items.length === 0) {
-    throw new SaleValidationError("At least one sale item is required.");
+  if (!Array.isArray(input.jobs) || input.jobs.length === 0) {
+    throw new SaleValidationError("Add at least one job to the bill.");
   }
 
-  const variantIds = new Set<number>();
-  const items = input.items.map((item) => {
-    const discountAmountCents = item.discountAmountCents ?? 0;
+  const jobs = input.jobs.map((job, index) => {
+    const jobName = job.jobName?.trim() ?? "";
+    const label = jobName ? `"${jobName}"` : `Job ${index + 1}`;
 
-    validatePositiveInteger(item.variantId, "Product size/colour");
-    validatePositiveInteger(item.quantity, "Quantity");
-    validateNonNegativeInteger(item.unitPriceCents, "Unit price");
-    validateNonNegativeInteger(discountAmountCents, "Discount");
-
-    if (variantIds.has(item.variantId)) {
-      throw new SaleValidationError("Each size/colour can appear only once per sale.");
+    if (!jobName) {
+      throw new SaleValidationError(`Job ${index + 1} needs a job name.`);
     }
 
-    const lineSubtotalCents = item.quantity * item.unitPriceCents;
+    const values: Partial<Record<keyof SaleJobRow, number>> = {};
 
-    if (discountAmountCents > lineSubtotalCents) {
-      throw new SaleValidationError("Discount cannot exceed the line subtotal.");
+    for (const kind of workKinds) {
+      const charge = job[kind] ?? { qty: 0, rateCents: 0 };
+      const qty = Number(charge.qty ?? 0);
+      const rateCents = Number(charge.rateCents ?? 0);
+
+      if (!Number.isFinite(qty) || qty < 0) {
+        throw new SaleValidationError(`${label}: ${workNames[kind]} quantity cannot be negative.`);
+      }
+
+      if (!Number.isInteger(rateCents) || rateCents < 0) {
+        throw new SaleValidationError(`${label}: ${workNames[kind]} rate must be an amount of zero or more.`);
+      }
+
+      if (rateCents > 0 && qty === 0) {
+        throw new SaleValidationError(`${label}: ${workNames[kind]} has a rate but no quantity.`);
+      }
+
+      const columns = columnsByKind[kind];
+      values[columns.qty] = qty;
+      values[columns.rate] = rateCents;
+      values[columns.amount] = workAmountCents({ qty, rateCents });
     }
 
-    variantIds.add(item.variantId);
+    const totalAmountCents = jobTotalCents({
+      rota: job.rota ?? { qty: 0, rateCents: 0 },
+      gto: job.gto ?? { qty: 0, rateCents: 0 },
+      cutting: job.cutting ?? { qty: 0, rateCents: 0 },
+      lamination: job.lamination ?? { qty: 0, rateCents: 0 },
+      dye: job.dye ?? { qty: 0, rateCents: 0 },
+    });
 
-    return {
-      variantId: item.variantId,
-      quantity: item.quantity,
-      unitPriceCents: item.unitPriceCents,
-      discountAmountCents,
-      subtotalCents: lineSubtotalCents,
-      totalAmountCents: lineSubtotalCents - discountAmountCents,
-    };
+    if (totalAmountCents <= 0) {
+      throw new SaleValidationError(`${label} has no charges. Fill in a quantity and rate for at least one kind of work.`);
+    }
+
+    return { position: index, jobName, ...values, totalAmountCents };
   });
 
-  const totalAmountCents = items.reduce((sum, item) => sum + item.totalAmountCents, 0);
-  // An omitted amount means nothing has been paid yet: the whole sale sits on the khata
-  // until a payment is recorded. Never assume it was settled in full.
-  const amountPaidCents = input.amountPaidCents ?? 0;
-
-  validateNonNegativeInteger(amountPaidCents, "Amount paid");
-
-  if (amountPaidCents > totalAmountCents) {
-    throw new SaleValidationError("Amount paid cannot be more than the sale total.");
-  }
-
   return {
-    customerId: input.customerId ?? null,
-    customerName,
+    customerId: input.customerId,
     saleDate,
-    amountPaidCents,
-    paymentMethod,
-    notes,
-    items,
-    subtotalCents: items.reduce((sum, item) => sum + item.subtotalCents, 0),
-    discountAmountCents: items.reduce((sum, item) => sum + item.discountAmountCents, 0),
-    totalAmountCents,
+    notes: nullableTrimmed(input.notes),
+    jobs,
+    totalAmountCents: jobs.reduce((sum, job) => sum + job.totalAmountCents, 0),
   };
 }
 
 type NormalizedSale = ReturnType<typeof normalizeSaleInput>;
 
-function toCustomerDto(row: typeof customers.$inferSelect): CustomerDto {
+/** Shapes a stored job row for the screens, with each kind of work as qty / rate / amount. */
+export function toSaleJobDto(row: SaleJobRow): SaleJobDto {
+  const charges = Object.fromEntries(
+    workKinds.map((kind) => {
+      const columns = columnsByKind[kind];
+
+      return [kind, { qty: row[columns.qty] as number, rateCents: row[columns.rate] as number, amountCents: row[columns.amount] as number }];
+    }),
+  ) as Pick<SaleJobDto, WorkKind>;
+
   return {
     id: row.id,
-    name: row.name,
-    phone: row.phone,
-    email: row.email,
-    address: row.address,
-    notes: row.notes,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
+    position: row.position,
+    jobName: row.jobName,
+    totalAmountCents: row.totalAmountCents,
+    ...charges,
   };
 }
 
-function formatInvoiceNumber(id: number) {
-  return `INV-${String(id).padStart(6, "0")}`;
+export function loadJobsForSales(db: DbClient, saleIds: number[]): Map<number, SaleJobDto[]> {
+  const bySale = new Map<number, SaleJobDto[]>();
+
+  if (saleIds.length === 0) {
+    return bySale;
+  }
+
+  for (const row of db.select().from(saleJobs).where(inArray(saleJobs.saleId, saleIds)).orderBy(asc(saleJobs.position), asc(saleJobs.id)).all()) {
+    const list = bySale.get(row.saleId) ?? [];
+    list.push(toSaleJobDto(row));
+    bySale.set(row.saleId, list);
+  }
+
+  return bySale;
 }
 
 function getSaleDetail(db: DbClient, id: number): SaleDetailDto {
-  const row = db
+  const sale = db
     .select({
       id: sales.id,
-      invoiceNumber: sales.invoiceNumber,
+      billNumber: sales.billNumber,
       customerId: sales.customerId,
       customerName: customers.name,
+      customerPhone: customers.phone,
       saleDate: sales.saleDate,
-      subtotalCents: sales.subtotalCents,
-      discountAmountCents: sales.discountAmountCents,
       totalAmountCents: sales.totalAmountCents,
-      profitAmountCents: sales.profitAmountCents,
-      amountPaidCents: sales.amountPaidCents,
-      paymentMethod: sales.paymentMethod,
       notes: sales.notes,
       createdAt: sales.createdAt,
       updatedAt: sales.updatedAt,
     })
     .from(sales)
-    .leftJoin(customers, eq(sales.customerId, customers.id))
+    .innerJoin(customers, eq(sales.customerId, customers.id))
     .where(eq(sales.id, id))
     .get();
 
-  if (row === undefined) {
-    throw new SaleValidationError("Sale was not found.");
+  if (sale === undefined) {
+    throw new SaleValidationError("Bill was not found.");
   }
 
-  const itemRows = db
-    .select({
-      id: saleItems.id,
-      productId: saleItems.productId,
-      variantId: saleItems.variantId,
-      productName: products.name,
-      productSku: products.sku,
-      variantSize: productVariants.size,
-      variantColor: productVariants.color,
-      variantSku: productVariants.sku,
-      quantity: saleItems.quantity,
-      unitPriceCents: saleItems.unitPriceCents,
-      unitCostCents: saleItems.unitCostCents,
-      discountAmountCents: saleItems.discountAmountCents,
-      totalAmountCents: saleItems.totalAmountCents,
-      profitAmountCents: saleItems.profitAmountCents,
-    })
-    .from(saleItems)
-    .innerJoin(products, eq(saleItems.productId, products.id))
-    .leftJoin(productVariants, eq(saleItems.variantId, productVariants.id))
-    .where(eq(saleItems.saleId, id))
-    .all();
-
-  const items = itemRows.map(({ variantSize, variantColor, ...item }) => ({
-    ...item,
-    variantLabel: formatVariantLabel(variantSize || null, variantColor || null),
-  }));
-
-  return {
-    ...row,
-    balanceDueCents: row.totalAmountCents - row.amountPaidCents,
-    items,
-  };
+  return { ...sale, jobs: loadJobsForSales(db, [id]).get(id) ?? [] };
 }
 
-/** Resolves the customer a sale belongs to, creating one when only a name was typed. */
-function resolveCustomerId(tx: DbClient, normalizedInput: NormalizedSale) {
-  if (normalizedInput.customerId !== null) {
-    const existingCustomer = tx.select().from(customers).where(eq(customers.id, normalizedInput.customerId)).get();
+function assertCustomerExists(db: DbClient, customerId: number) {
+  const customer = db.select({ id: customers.id }).from(customers).where(eq(customers.id, customerId)).get();
 
-    if (existingCustomer === undefined) {
-      throw new SaleValidationError("Customer was not found.");
-    }
-
-    return normalizedInput.customerId;
+  if (customer === undefined) {
+    throw new SaleValidationError("Customer was not found.");
   }
-
-  if (normalizedInput.customerName !== null) {
-    const existingCustomer = tx.select().from(customers).where(eq(customers.name, normalizedInput.customerName)).get();
-    return existingCustomer?.id ?? tx.insert(customers).values({ name: normalizedInput.customerName }).returning({ id: customers.id }).get().id;
-  }
-
-  return null;
 }
 
-/**
- * Writes the sale lines, takes the stock off each size/colour, and records the
- * movements. Shared by create and edit so both paths price and deduct identically.
- */
-function writeSaleItems(tx: DbClient, saleId: number, normalizedInput: NormalizedSale) {
-  let profitAmountCents = 0;
+function nextBillNumberIn(db: DbClient) {
+  const row = db.select({ max: sql<number | null>`max(${sales.billNumber})` }).from(sales).get();
 
-  for (const item of normalizedInput.items) {
-    const variantWithProduct = loadVariantWithProduct(tx, item.variantId, (message) => {
-      throw new SaleValidationError(message);
-    });
-    const { variant, product } = variantWithProduct;
+  return (row?.max ?? 0) + 1;
+}
 
-    if (!product.isActive || !variant.isActive) {
-      throw new SaleValidationError("Inactive products cannot be sold.");
-    }
-
-    if (variant.currentStock < item.quantity) {
-      throw new SaleValidationError(`Cannot sell more than available stock for ${product.name} (${formatVariantLabel(variant.size || null, variant.color || null)}).`);
-    }
-
-    const unitCostCents = effectivePurchasePriceCents(variantWithProduct);
-    const lineProfitCents = item.totalAmountCents - item.quantity * unitCostCents;
-    const stockBefore = variant.currentStock;
-    const stockAfter = stockBefore - item.quantity;
-
-    profitAmountCents += lineProfitCents;
-
-    tx.insert(saleItems)
-      .values({
-        saleId,
-        productId: product.id,
-        variantId: variant.id,
-        quantity: item.quantity,
-        unitPriceCents: item.unitPriceCents,
-        unitCostCents,
-        discountAmountCents: item.discountAmountCents,
-        totalAmountCents: item.totalAmountCents,
-        profitAmountCents: lineProfitCents,
-      })
-      .run();
-
-    tx.update(productVariants)
-      .set({ currentStock: stockAfter, updatedAt: new Date() })
-      .where(eq(productVariants.id, variant.id))
-      .run();
-    rollupProductStock(tx, product.id);
-
-    tx.insert(stockMovements)
-      .values({
-        productId: product.id,
-        variantId: variant.id,
-        movementType: "sale",
-        referenceType: "sale",
-        referenceId: saleId,
-        quantityChange: -item.quantity,
-        stockBefore,
-        stockAfter,
-        notes: normalizedInput.notes,
-      })
+function writeJobs(tx: DbClient, saleId: number, normalized: NormalizedSale) {
+  for (const job of normalized.jobs) {
+    tx.insert(saleJobs)
+      .values({ ...(job as typeof saleJobs.$inferInsert), saleId })
       .run();
   }
-
-  return profitAmountCents;
 }
 
-/** Puts back the stock a sale took and clears its lines, movements, and payment. */
-function unwindSale(tx: DbClient, saleId: number) {
-  const existingItems = tx.select().from(saleItems).where(eq(saleItems.saleId, saleId)).all();
-
-  for (const item of existingItems) {
-    if (item.variantId === null) {
-      continue;
-    }
-
-    const variant = tx.select().from(productVariants).where(eq(productVariants.id, item.variantId)).get();
-
-    if (variant === undefined) {
-      continue;
-    }
-
-    tx.update(productVariants)
-      .set({ currentStock: variant.currentStock + item.quantity, updatedAt: new Date() })
-      .where(eq(productVariants.id, variant.id))
-      .run();
-    rollupProductStock(tx, variant.productId);
-  }
-
-  tx.delete(saleItems).where(eq(saleItems.saleId, saleId)).run();
-  // referenceId alone is not unique across movement sources, so the reference
-  // type has to be matched too or a purchase with the same id loses its history.
-  tx.delete(stockMovements).where(and(eq(stockMovements.referenceType, "sale"), eq(stockMovements.referenceId, saleId))).run();
-  tx.delete(payments).where(eq(payments.saleId, saleId)).run();
-}
-
-function recordSalePayment(tx: DbClient, saleId: number, customerId: number | null, normalizedInput: NormalizedSale) {
-  if (customerId === null || normalizedInput.amountPaidCents <= 0) {
-    return;
-  }
-
-  tx.insert(payments)
-    .values({
-      partyType: "customer",
-      partyId: customerId,
-      direction: "in",
-      amountCents: normalizedInput.amountPaidCents,
-      paymentDate: normalizedInput.saleDate,
-      method: normalizedInput.paymentMethod,
-      notes: "Paid with sale",
-      saleId,
-    })
-    .run();
-}
-
-export function listCustomers(databasePath?: string): CustomerDto[] {
+export function getNextBillNumber(databasePath?: string): number {
   runMigrations(databasePath);
   const { sqlite, db } = createDb(databasePath);
 
   try {
-    return db.select().from(customers).orderBy(customers.name).all().map(toCustomerDto);
+    return nextBillNumberIn(db);
   } finally {
     sqlite.close();
   }
 }
 
-export function createCustomer(databasePath: string | undefined, input: CustomerInput): CustomerDto {
-  runMigrations(databasePath);
-  const { sqlite, db } = createDb(databasePath);
-
-  try {
-    const normalizedInput = normalizeCustomerInput(input);
-    const insertedCustomer = db.insert(customers).values(normalizedInput).returning({ id: customers.id }).get();
-    const customer = db.select().from(customers).where(eq(customers.id, insertedCustomer.id)).get();
-
-    if (customer === undefined) {
-      throw new SaleValidationError("Customer was not found after creation.");
-    }
-
-    return toCustomerDto(customer);
-  } finally {
-    sqlite.close();
-  }
-}
-
+/** Records a bill and its jobs together; if any job is rejected, nothing is saved. */
 export function createSale(databasePath: string | undefined, input: SaleInput): SaleDetailDto {
   runMigrations(databasePath);
   const { sqlite, db } = createDb(databasePath);
 
   try {
-    const normalizedInput = normalizeSaleInput(input);
+    const normalized = normalizeSaleInput(input);
 
     const saleId = db.transaction((tx) => {
-      const customerId = resolveCustomerId(tx, normalizedInput);
-      const insertedSale = tx
+      assertCustomerExists(tx, normalized.customerId);
+
+      const inserted = tx
         .insert(sales)
         .values({
-          invoiceNumber: `TEMP-${Date.now()}`,
-          customerId,
-          saleDate: normalizedInput.saleDate,
-          subtotalCents: normalizedInput.subtotalCents,
-          discountAmountCents: normalizedInput.discountAmountCents,
-          totalAmountCents: normalizedInput.totalAmountCents,
-          profitAmountCents: 0,
-          amountPaidCents: normalizedInput.amountPaidCents,
-          paymentMethod: normalizedInput.paymentMethod,
-          notes: normalizedInput.notes,
+          billNumber: nextBillNumberIn(tx),
+          customerId: normalized.customerId,
+          saleDate: normalized.saleDate,
+          totalAmountCents: normalized.totalAmountCents,
+          notes: normalized.notes,
+          // Millisecond precision, so same-day entries on the khata keep the order they were typed in.
+          createdAt: new Date(),
+          updatedAt: new Date(),
         })
         .returning({ id: sales.id })
         .get();
 
-      const profitAmountCents = writeSaleItems(tx, insertedSale.id, normalizedInput);
+      writeJobs(tx, inserted.id, normalized);
 
-      tx.update(sales)
-        .set({ invoiceNumber: formatInvoiceNumber(insertedSale.id), profitAmountCents, updatedAt: new Date() })
-        .where(eq(sales.id, insertedSale.id))
-        .run();
-
-      recordSalePayment(tx, insertedSale.id, customerId, normalizedInput);
-
-      return insertedSale.id;
+      return inserted.id;
     });
 
     return getSaleDetail(db, saleId);
@@ -488,77 +250,43 @@ export function createSale(databasePath: string | undefined, input: SaleInput): 
   }
 }
 
-/**
- * Replaces a sale with corrected details. The original stock deduction is put
- * back before the new lines are applied, so stock ends up as if the sale had
- * been entered this way in the first place. Sales that already have a return
- * against them are refused, because the return points at the old lines.
- */
+/** Replaces a bill's jobs and details in place; its bill number stays the same. */
 export function updateSale(databasePath: string | undefined, id: number, input: SaleInput, actorName?: string | null): SaleDetailDto {
+  validateId(id, "Bill");
   runMigrations(databasePath);
   const { sqlite, db } = createDb(databasePath);
 
   try {
-    const normalizedInput = normalizeSaleInput(input);
+    const normalized = normalizeSaleInput(input);
 
     db.transaction((tx) => {
-      const existingSale = tx.select().from(sales).where(eq(sales.id, id)).get();
-
-      if (existingSale === undefined) {
-        throw new SaleValidationError("Sale was not found.");
-      }
-
-      const existingReturn = tx.select({ id: saleReturns.id }).from(saleReturns).where(eq(saleReturns.saleId, id)).get();
-
-      if (existingReturn !== undefined) {
-        throw new SaleValidationError("This sale already has a return recorded against it and can no longer be edited.");
-      }
-
       const before = getSaleDetail(tx, id);
-
-      unwindSale(tx, id);
-
-      const customerId = resolveCustomerId(tx, normalizedInput);
+      assertCustomerExists(tx, normalized.customerId);
 
       tx.update(sales)
         .set({
-          customerId,
-          saleDate: normalizedInput.saleDate,
-          subtotalCents: normalizedInput.subtotalCents,
-          discountAmountCents: normalizedInput.discountAmountCents,
-          totalAmountCents: normalizedInput.totalAmountCents,
-          amountPaidCents: normalizedInput.amountPaidCents,
-          paymentMethod: normalizedInput.paymentMethod,
-          notes: normalizedInput.notes,
+          customerId: normalized.customerId,
+          saleDate: normalized.saleDate,
+          totalAmountCents: normalized.totalAmountCents,
+          notes: normalized.notes,
           updatedAt: new Date(),
         })
         .where(eq(sales.id, id))
         .run();
 
-      const profitAmountCents = writeSaleItems(tx, id, normalizedInput);
-
-      tx.update(sales).set({ profitAmountCents, updatedAt: new Date() }).where(eq(sales.id, id)).run();
-
-      recordSalePayment(tx, id, customerId, normalizedInput);
+      tx.delete(saleJobs).where(eq(saleJobs.saleId, id)).run();
+      writeJobs(tx, id, normalized);
 
       tx.insert(auditLogs)
         .values({
-          action: "sale.edited",
+          action: "sale.updated",
           entityType: "sale",
           entityId: id,
           actorName: nullableTrimmed(actorName),
           details: JSON.stringify({
-            invoiceNumber: existingSale.invoiceNumber,
-            before: {
-              totalAmountCents: before.totalAmountCents,
-              amountPaidCents: before.amountPaidCents,
-              items: before.items.map((item) => ({ variantId: item.variantId, quantity: item.quantity, unitPriceCents: item.unitPriceCents })),
-            },
-            after: {
-              totalAmountCents: normalizedInput.totalAmountCents,
-              amountPaidCents: normalizedInput.amountPaidCents,
-              items: normalizedInput.items.map((item) => ({ variantId: item.variantId, quantity: item.quantity, unitPriceCents: item.unitPriceCents })),
-            },
+            billNumber: before.billNumber,
+            before: { customerId: before.customerId, totalAmountCents: before.totalAmountCents, jobs: before.jobs.map((job) => job.jobName) },
+            after: { customerId: normalized.customerId, totalAmountCents: normalized.totalAmountCents, jobs: normalized.jobs.map((job) => job.jobName) },
           }),
         })
         .run();
@@ -570,7 +298,38 @@ export function updateSale(databasePath: string | undefined, id: number, input: 
   }
 }
 
+export function deleteSale(databasePath: string | undefined, id: number, actorName?: string | null): void {
+  validateId(id, "Bill");
+  runMigrations(databasePath);
+  const { sqlite, db } = createDb(databasePath);
+
+  try {
+    db.transaction((tx) => {
+      const before = getSaleDetail(tx, id);
+
+      tx.delete(sales).where(eq(sales.id, id)).run();
+      tx.insert(auditLogs)
+        .values({
+          action: "sale.deleted",
+          entityType: "sale",
+          entityId: id,
+          actorName: nullableTrimmed(actorName),
+          details: JSON.stringify({
+            billNumber: before.billNumber,
+            customerName: before.customerName,
+            totalAmountCents: before.totalAmountCents,
+            jobs: before.jobs.map((job) => job.jobName),
+          }),
+        })
+        .run();
+    });
+  } finally {
+    sqlite.close();
+  }
+}
+
 export function getSale(databasePath: string | undefined, id: number): SaleDetailDto {
+  validateId(id, "Bill");
   runMigrations(databasePath);
   const { sqlite, db } = createDb(databasePath);
 
@@ -581,38 +340,65 @@ export function getSale(databasePath: string | undefined, id: number): SaleDetai
   }
 }
 
-export function listSales(databasePath?: string): SaleHistoryDto[] {
+export function listSales(databasePath?: string, filters: SaleListFilters = {}): SaleHistoryDto[] {
   runMigrations(databasePath);
   const { sqlite, db } = createDb(databasePath);
 
   try {
+    const conditions = [];
+    const start = parseDay(filters.startDate);
+    const end = endOfDayExclusive(filters.endDate);
+
+    if (filters.customerId !== null && filters.customerId !== undefined) {
+      conditions.push(eq(sales.customerId, filters.customerId));
+    }
+
+    if (start !== null) {
+      conditions.push(gte(sales.saleDate, start));
+    }
+
+    if (end !== null) {
+      conditions.push(lt(sales.saleDate, end));
+    }
+
     const rows = db
       .select({
         id: sales.id,
-        invoiceNumber: sales.invoiceNumber,
+        billNumber: sales.billNumber,
         customerId: sales.customerId,
         customerName: customers.name,
+        customerPhone: customers.phone,
         saleDate: sales.saleDate,
-        subtotalCents: sales.subtotalCents,
-        discountAmountCents: sales.discountAmountCents,
         totalAmountCents: sales.totalAmountCents,
-        profitAmountCents: sales.profitAmountCents,
-        amountPaidCents: sales.amountPaidCents,
-        paymentMethod: sales.paymentMethod,
         notes: sales.notes,
         createdAt: sales.createdAt,
         updatedAt: sales.updatedAt,
       })
       .from(sales)
-      .leftJoin(customers, eq(sales.customerId, customers.id))
-      .orderBy(desc(sales.saleDate), desc(sales.id))
+      .innerJoin(customers, eq(sales.customerId, customers.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(sales.saleDate), desc(sales.billNumber))
       .all();
 
-    return rows.map((row) => ({
-      ...row,
-      balanceDueCents: row.totalAmountCents - row.amountPaidCents,
-      itemCount: db.select().from(saleItems).where(eq(saleItems.saleId, row.id)).all().length,
-    }));
+    const jobsBySale = loadJobsForSales(
+      db,
+      rows.map((row) => row.id),
+    );
+    const search = filters.search?.trim().toLowerCase() ?? "";
+
+    return rows
+      .map((row) => {
+        const jobNames = (jobsBySale.get(row.id) ?? []).map((job) => job.jobName);
+
+        return { ...row, jobCount: jobNames.length, jobNames };
+      })
+      .filter(
+        (row) =>
+          search === "" ||
+          String(row.billNumber) === search ||
+          row.customerName.toLowerCase().includes(search) ||
+          row.jobNames.some((name) => name.toLowerCase().includes(search)),
+      );
   } finally {
     sqlite.close();
   }

@@ -4,16 +4,9 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { runMigrations } from "./migrate";
-import {
-  ContactValidationError,
-  createCustomer,
-  createSupplier,
-  listCustomers,
-  listSuppliers,
-  updateCustomer,
-  updateSupplier,
-  type ContactInput,
-} from "./contacts-service";
+import { ContactValidationError, createCustomer, deleteCustomer, listCustomers, updateCustomer, type ContactInput } from "./contacts-service";
+import { recordPayment } from "./ledger-service";
+import { createSale } from "./sales-service";
 
 const tempDirs: string[] = [];
 
@@ -53,17 +46,6 @@ describe("contacts service", () => {
     expect(listCustomers(databasePath, { search: "wholesale" }).map((customer) => customer.name)).toEqual(["Sara Ahmed"]);
   });
 
-  it("creates, lists, searches, and updates suppliers", () => {
-    const databasePath = makeTempDatabasePath();
-    const supplier = createSupplier(databasePath, makeContactInput({ name: "Fabric House", address: "Karachi" }));
-    createSupplier(databasePath, makeContactInput({ name: "Thread Mart", phone: "021-111" }));
-
-    const updated = updateSupplier(databasePath, supplier.id, makeContactInput({ name: "Fabric House PK", address: "Karachi Saddar" }));
-
-    expect(updated).toMatchObject({ id: supplier.id, name: "Fabric House PK", address: "Karachi Saddar" });
-    expect(listSuppliers(databasePath, { search: "021" }).map((listedSupplier) => listedSupplier.name)).toEqual(["Thread Mart"]);
-  });
-
   it("carries an old khata balance in and lets it be corrected later", () => {
     const databasePath = makeTempDatabasePath();
     const customer = createCustomer(databasePath, makeContactInput({ name: "Kamran", openingBalanceCents: 30_000 }));
@@ -77,7 +59,6 @@ describe("contacts service", () => {
     const databasePath = makeTempDatabasePath();
 
     expect(createCustomer(databasePath, makeContactInput({ name: "Walk-in" })).openingBalanceCents).toBe(0);
-    expect(createSupplier(databasePath, makeContactInput({ name: "Thread Mart" })).openingBalanceCents).toBe(0);
     expect(() => createCustomer(databasePath, makeContactInput({ name: "Broken", openingBalanceCents: 10.5 }))).toThrow(ContactValidationError);
   });
 
@@ -90,6 +71,28 @@ describe("contacts service", () => {
     expect(updated.phone).toBeNull();
     expect(() => createCustomer(databasePath, makeContactInput({ name: "   " }))).toThrow(ContactValidationError);
     expect(() => updateCustomer(databasePath, 999, makeContactInput())).toThrow(ContactValidationError);
-    expect(() => updateSupplier(databasePath, 0, makeContactInput())).toThrow(ContactValidationError);
+    expect(() => updateCustomer(databasePath, 0, makeContactInput())).toThrow(ContactValidationError);
+  });
+
+  it("deletes a customer entered by mistake, but never one with a khata", () => {
+    const databasePath = makeTempDatabasePath();
+    const mistake = createCustomer(databasePath, makeContactInput({ name: "Typo" }));
+    const billed = createCustomer(databasePath, makeContactInput({ name: "Billed" }));
+    const paid = createCustomer(databasePath, makeContactInput({ name: "Paid" }));
+    const none = { qty: 0, rateCents: 0 };
+
+    createSale(databasePath, {
+      customerId: billed.id,
+      saleDate: "2026-11-01",
+      jobs: [{ jobName: "Cards", rota: { qty: 1, rateCents: 100 }, gto: none, cutting: none, lamination: none, dye: none }],
+    });
+    recordPayment(databasePath, { customerId: paid.id, amountCents: 100, paymentDate: "2026-11-01" });
+
+    deleteCustomer(databasePath, mistake.id);
+
+    expect(listCustomers(databasePath).map((customer) => customer.name)).toEqual(["Billed", "Paid"]);
+    expect(() => deleteCustomer(databasePath, billed.id)).toThrow("cannot be deleted");
+    expect(() => deleteCustomer(databasePath, paid.id)).toThrow("cannot be deleted");
+    expect(() => deleteCustomer(databasePath, 999)).toThrow("Customer was not found.");
   });
 });

@@ -1,76 +1,6 @@
-export type ProductVariantInput = {
-  id?: number | null;
-  size?: string | null;
-  color?: string | null;
-  sku: string;
-  purchasePriceCents?: number | null;
-  sellingPriceCents?: number | null;
-  currentStock: number;
-  lowStockThreshold?: number | null;
-  isActive: boolean;
-};
+import type { WorkAmounts, WorkCharge, WorkChargeInput, WorkKind } from "../lib/job-math.js";
 
-export type ProductInput = {
-  name: string;
-  sku: string;
-  categoryName?: string | null;
-  purchasePriceCents: number;
-  sellingPriceCents: number;
-  currentStock?: number;
-  lowStockThreshold: number;
-  isActive: boolean;
-  variants?: ProductVariantInput[];
-};
-
-export type ProductListFilters = {
-  search?: string;
-  categoryName?: string | null;
-  isLowStock?: boolean;
-  isActive?: boolean;
-};
-
-export type ProductVariantDto = {
-  id: number;
-  productId: number;
-  size: string | null;
-  color: string | null;
-  label: string;
-  sku: string;
-  purchasePriceCents: number;
-  sellingPriceCents: number;
-  purchasePriceOverrideCents: number | null;
-  sellingPriceOverrideCents: number | null;
-  currentStock: number;
-  lowStockThreshold: number;
-  lowStockThresholdOverride: number | null;
-  isActive: boolean;
-  isLowStock: boolean;
-};
-
-export type ProductDto = {
-  id: number;
-  name: string;
-  sku: string;
-  categoryName: string | null;
-  purchasePriceCents: number;
-  sellingPriceCents: number;
-  currentStock: number;
-  lowStockThreshold: number;
-  isActive: boolean;
-  isLowStock: boolean;
-  hasVariants: boolean;
-  variants: ProductVariantDto[];
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-export type ProductApi = {
-  list(filters?: ProductListFilters): Promise<ProductDto[]>;
-  get(id: number): Promise<ProductDto>;
-  create(input: ProductInput): Promise<ProductDto>;
-  update(id: number, input: ProductInput): Promise<ProductDto>;
-  markInactive(id: number): Promise<ProductDto>;
-};
+export type { WorkAmounts, WorkCharge, WorkChargeInput, WorkKind };
 
 export type AuditLogInput = {
   action: string;
@@ -102,96 +32,9 @@ export type AuditApi = {
   create(input: AuditLogInput): Promise<AuditLogDto>;
 };
 
-export type SupplierInput = {
-  name: string;
-  phone?: string | null;
-  email?: string | null;
-  address?: string | null;
-  notes?: string | null;
-};
-
-export type SupplierDto = SupplierInput & {
-  id: number;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-export type PurchaseItemInput = {
-  variantId: number;
-  quantity: number;
-  unitCostCents: number;
-};
-
-export type PurchaseInput = {
-  supplierId?: number | null;
-  supplierName?: string | null;
-  purchaseDate: Date | string;
-  amountPaidCents?: number;
-  notes?: string | null;
-  items: PurchaseItemInput[];
-};
-
-export type PurchaseItemDto = {
-  id: number;
-  productId: number;
-  variantId: number | null;
-  productName: string;
-  productSku: string;
-  variantLabel: string;
-  variantSku: string | null;
-  quantity: number;
-  unitCostCents: number;
-  totalCostCents: number;
-};
-
-export type PurchaseDetailDto = {
-  id: number;
-  supplierId: number | null;
-  supplierName: string | null;
-  purchaseDate: Date;
-  totalAmountCents: number;
-  amountPaidCents: number;
-  balanceDueCents: number;
-  notes: string | null;
-  items: PurchaseItemDto[];
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-export type PurchaseHistoryDto = {
-  id: number;
-  supplierId: number | null;
-  supplierName: string | null;
-  purchaseDate: Date;
-  totalAmountCents: number;
-  amountPaidCents: number;
-  balanceDueCents: number;
-  notes: string | null;
-  itemCount: number;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-export type PurchaseApi = {
-  list(): Promise<PurchaseHistoryDto[]>;
-  create(input: PurchaseInput): Promise<PurchaseDetailDto>;
-  listSuppliers(): Promise<SupplierDto[]>;
-  createSupplier(input: SupplierInput): Promise<SupplierDto>;
-};
-
-export type CustomerInput = {
-  name: string;
-  phone?: string | null;
-  email?: string | null;
-  address?: string | null;
-  notes?: string | null;
-};
-
-export type CustomerDto = CustomerInput & {
-  id: number;
-  createdAt: Date;
-  updatedAt: Date;
-};
+// ---------------------------------------------------------------------------
+// Customers
+// ---------------------------------------------------------------------------
 
 export type ContactInput = {
   name: string;
@@ -199,7 +42,7 @@ export type ContactInput = {
   email?: string | null;
   address?: string | null;
   notes?: string | null;
-  /** What the party already owed before any invoice here. Negative is money held in advance. */
+  /** What the customer already owed before any bill here. Negative is money held in advance. */
   openingBalanceCents?: number;
 };
 
@@ -218,103 +61,201 @@ export type ContactsApi = {
   listCustomers(filters?: ContactListFilters): Promise<ContactDto[]>;
   createCustomer(input: ContactInput): Promise<ContactDto>;
   updateCustomer(id: number, input: ContactInput): Promise<ContactDto>;
-  listSuppliers(filters?: ContactListFilters): Promise<ContactDto[]>;
-  createSupplier(input: ContactInput): Promise<ContactDto>;
-  updateSupplier(id: number, input: ContactInput): Promise<ContactDto>;
+  /** Only a customer with no bills or payments can be deleted. */
+  deleteCustomer(id: number): Promise<void>;
 };
 
-export type SaleItemInput = {
-  variantId: number;
-  quantity: number;
-  unitPriceCents: number;
-  discountAmountCents?: number;
-};
+// ---------------------------------------------------------------------------
+// Sales: one bill per customer visit, one or more printing jobs on it
+// ---------------------------------------------------------------------------
+
+export type SaleJobInput = {
+  jobName: string;
+} & Record<WorkKind, WorkChargeInput>;
 
 export type SaleInput = {
-  customerId?: number | null;
-  customerName?: string | null;
+  customerId: number;
   saleDate: Date | string;
-  amountPaidCents?: number;
-  paymentMethod?: string | null;
   notes?: string | null;
-  items: SaleItemInput[];
+  jobs: SaleJobInput[];
 };
 
-export type SaleItemDto = {
+export type SaleJobDto = {
   id: number;
-  productId: number;
-  variantId: number | null;
-  productName: string;
-  productSku: string;
-  variantLabel: string;
-  variantSku: string | null;
-  quantity: number;
-  unitPriceCents: number;
-  unitCostCents: number;
-  discountAmountCents: number;
+  position: number;
+  jobName: string;
   totalAmountCents: number;
-  profitAmountCents: number;
-};
+} & Record<WorkKind, WorkCharge>;
 
 export type SaleDetailDto = {
   id: number;
-  invoiceNumber: string;
-  customerId: number | null;
-  customerName: string | null;
+  billNumber: number;
+  customerId: number;
+  customerName: string;
+  customerPhone: string | null;
   saleDate: Date;
-  subtotalCents: number;
-  discountAmountCents: number;
   totalAmountCents: number;
-  profitAmountCents: number;
-  amountPaidCents: number;
-  balanceDueCents: number;
-  paymentMethod: string | null;
   notes: string | null;
-  items: SaleItemDto[];
+  jobs: SaleJobDto[];
   createdAt: Date;
   updatedAt: Date;
 };
 
-export type SaleHistoryDto = Omit<SaleDetailDto, "items"> & {
-  itemCount: number;
+export type SaleHistoryDto = Omit<SaleDetailDto, "jobs"> & {
+  jobCount: number;
+  jobNames: string[];
+};
+
+export type SaleListFilters = {
+  customerId?: number | null;
+  search?: string | null;
+  /** "YYYY-MM-DD", inclusive. */
+  startDate?: string | null;
+  /** "YYYY-MM-DD", inclusive. */
+  endDate?: string | null;
 };
 
 export type SalesApi = {
-  list(): Promise<SaleHistoryDto[]>;
+  list(filters?: SaleListFilters): Promise<SaleHistoryDto[]>;
   get(id: number): Promise<SaleDetailDto>;
+  nextBillNumber(): Promise<number>;
   create(input: SaleInput): Promise<SaleDetailDto>;
   update(id: number, input: SaleInput, password: string, actorName?: string | null): Promise<SaleDetailDto>;
-  listCustomers(): Promise<CustomerDto[]>;
-  createCustomer(input: CustomerInput): Promise<CustomerDto>;
+  delete(id: number, password: string, actorName?: string | null): Promise<void>;
 };
 
-export type DashboardLowStockProductDto = {
+// ---------------------------------------------------------------------------
+// Ledger (khata)
+// ---------------------------------------------------------------------------
+
+export type PaymentInput = {
+  customerId: number;
+  amountCents: number;
+  paymentDate: Date | string;
+  /** "cash", "mzn", "bank" or whatever the shop writes on the khata. */
+  narration?: string | null;
+};
+
+export type PaymentDto = {
   id: number;
-  variantId: number;
-  name: string;
-  sku: string;
-  variantLabel: string;
-  currentStock: number;
-  lowStockThreshold: number;
+  receiptNumber: number;
+  customerId: number;
+  amountCents: number;
+  paymentDate: Date;
+  narration: string | null;
 };
 
-export type DashboardBestSellingProductDto = {
-  productId: number;
-  name: string;
-  sku: string;
-  quantitySold: number;
-  totalSalesCents: number;
+export type LedgerCustomerSummaryDto = {
+  customerId: number;
+  customerName: string;
+  phone: string | null;
+  openingBalanceCents: number;
+  billedCents: number;
+  receivedCents: number;
+  balanceCents: number;
+  lastActivityDate: Date | null;
+};
+
+export type LedgerSummaryDto = {
+  customers: LedgerCustomerSummaryDto[];
+  /** Sum of every balance still owed to the shop; advances are not netted off. */
+  totalReceivableCents: number;
+};
+
+export type LedgerFilters = {
+  /** "YYYY-MM-DD", inclusive. Everything before it is carried in as the opening balance. */
+  startDate?: string | null;
+  /** "YYYY-MM-DD", inclusive. */
+  endDate?: string | null;
+};
+
+export type LedgerJobRowDto = SaleJobDto & {
+  /** Running balance after this job. */
+  balanceCents: number;
+};
+
+export type LedgerBillEntryDto = {
+  kind: "bill";
+  saleId: number;
+  billNumber: number;
+  date: Date;
+  notes: string | null;
+  jobs: LedgerJobRowDto[];
+  workTotals: WorkAmounts;
+  totalAmountCents: number;
+  /** Running balance after the whole bill. */
+  balanceCents: number;
+};
+
+export type LedgerPaymentEntryDto = {
+  kind: "payment";
+  paymentId: number;
+  receiptNumber: number;
+  date: Date;
+  narration: string | null;
+  amountCents: number;
+  balanceCents: number;
+};
+
+export type LedgerEntryDto = LedgerBillEntryDto | LedgerPaymentEntryDto;
+
+export type BusinessDocumentSettingsDto = {
+  businessName: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  currencySymbol: string;
+};
+
+export type LedgerStatementDto = {
+  customer: {
+    id: number;
+    name: string;
+    phone: string | null;
+    address: string | null;
+  };
+  startDate: string | null;
+  endDate: string | null;
+  /** Balance brought forward: the customer's opening balance plus everything before startDate. */
+  openingBalanceCents: number;
+  entries: LedgerEntryDto[];
+  workTotals: WorkAmounts;
+  debitCents: number;
+  creditCents: number;
+  closingBalanceCents: number;
+  business: BusinessDocumentSettingsDto;
+  generatedAt: Date;
+};
+
+export type LedgerApi = {
+  getSummary(): Promise<LedgerSummaryDto>;
+  getStatement(customerId: number, filters?: LedgerFilters): Promise<LedgerStatementDto>;
+  nextReceiptNumber(): Promise<number>;
+  recordPayment(input: PaymentInput): Promise<PaymentDto>;
+  deletePayment(id: number, password: string, actorName?: string | null): Promise<void>;
+};
+
+// ---------------------------------------------------------------------------
+// Dashboard and reports
+// ---------------------------------------------------------------------------
+
+export type DashboardReceivableDto = {
+  customerId: number;
+  customerName: string;
+  phone: string | null;
+  balanceCents: number;
 };
 
 export type DashboardSummaryDto = {
-  productCount: number;
-  totalStockQuantity: number;
-  inventoryValueCents: number;
   todaySalesCents: number;
-  currentMonthSalesCents: number;
-  currentMonthProfitCents: number;
-  lowStockProducts: DashboardLowStockProductDto[];
-  bestSellingProducts: DashboardBestSellingProductDto[];
+  todayBillCount: number;
+  monthSalesCents: number;
+  monthBillCount: number;
+  monthReceivedCents: number;
+  totalReceivableCents: number;
+  customerCount: number;
+  monthWorkTotals: WorkAmounts;
+  topReceivables: DashboardReceivableDto[];
 };
 
 export type DashboardApi = {
@@ -322,254 +263,43 @@ export type DashboardApi = {
 };
 
 export type ReportFilters = {
-  startDate?: Date | string | null;
-  endDate?: Date | string | null;
+  /** "YYYY-MM-DD", inclusive. */
+  startDate?: string | null;
+  /** "YYYY-MM-DD", inclusive. */
+  endDate?: string | null;
+  customerId?: number | null;
 };
 
 export type SalesReportRowDto = {
-  id: number;
-  invoiceNumber: string;
-  saleDate: Date;
-  customerName: string | null;
-  itemCount: number;
-  subtotalCents: number;
-  discountAmountCents: number;
-  totalAmountCents: number;
-  profitAmountCents: number;
-  paymentMethod: string | null;
-  notes: string | null;
-};
-
-export type PurchaseReportRowDto = {
-  id: number;
-  purchaseDate: Date;
-  supplierName: string | null;
-  itemCount: number;
-  totalAmountCents: number;
-  notes: string | null;
-};
-
-export type ProfitReportRowDto = {
   saleId: number;
-  invoiceNumber: string;
+  billNumber: number;
   saleDate: Date;
-  customerName: string | null;
-  revenueCents: number;
-  costCents: number;
-  discountAmountCents: number;
-  profitAmountCents: number;
-};
-
-export type StockReportRowDto = {
-  productId: number;
-  variantId: number;
-  name: string;
-  sku: string;
-  variantLabel: string;
-  categoryName: string | null;
-  currentStock: number;
-  lowStockThreshold: number;
-  purchasePriceCents: number;
-  sellingPriceCents: number;
-  inventoryValueCents: number;
-  isLowStock: boolean;
-  isActive: boolean;
-};
-
-export type ReportsTotalsDto = {
-  salesTotalCents: number;
-  purchaseTotalCents: number;
-  revenueCents: number;
-  costCents: number;
-  discountCents: number;
-  profitCents: number;
-  stockQuantity: number;
-  inventoryValueCents: number;
-};
+  customerName: string;
+  jobName: string;
+  totalAmountCents: number;
+} & Record<WorkKind, WorkCharge>;
 
 export type ReportsDto = {
   filters: ReportFilters;
-  salesRows: SalesReportRowDto[];
-  purchaseRows: PurchaseReportRowDto[];
-  profitRows: ProfitReportRowDto[];
-  stockRows: StockReportRowDto[];
-  totals: ReportsTotalsDto;
+  rows: SalesReportRowDto[];
+  workTotals: WorkAmounts;
+  salesTotalCents: number;
+  billCount: number;
+  jobCount: number;
+  receivedCents: number;
 };
 
 export type ReportsApi = {
   getReports(filters?: ReportFilters): Promise<ReportsDto>;
 };
 
-export type ReturnItemInput = {
-  sourceItemId: number;
-  quantity: number;
-};
+// ---------------------------------------------------------------------------
+// Printable documents
+// ---------------------------------------------------------------------------
 
-export type SaleReturnInput = {
-  saleId: number;
-  returnDate: Date | string;
-  notes?: string | null;
-  actorName?: string | null;
-  items: ReturnItemInput[];
-};
-
-export type PurchaseReturnInput = {
-  purchaseId: number;
-  returnDate: Date | string;
-  notes?: string | null;
-  actorName?: string | null;
-  items: ReturnItemInput[];
-};
-
-export type SaleReturnableItemDto = {
-  saleItemId: number;
-  productId: number;
-  variantId: number | null;
-  productName: string;
-  productSku: string;
-  variantLabel: string;
-  soldQuantity: number;
-  returnedQuantity: number;
-  returnableQuantity: number;
-  unitPriceCents: number;
-  unitCostCents: number;
-  discountAmountCents: number;
-  totalAmountCents: number;
-  profitAmountCents: number;
-};
-
-export type SaleReturnCandidateDto = {
-  saleId: number;
-  invoiceNumber: string;
-  saleDate: Date;
-  customerName: string | null;
-  items: SaleReturnableItemDto[];
-};
-
-export type PurchaseReturnableItemDto = {
-  purchaseItemId: number;
-  productId: number;
-  variantId: number | null;
-  productName: string;
-  productSku: string;
-  variantLabel: string;
-  purchasedQuantity: number;
-  returnedQuantity: number;
-  returnableQuantity: number;
-  currentStock: number;
-  unitCostCents: number;
-  totalCostCents: number;
-};
-
-export type PurchaseReturnCandidateDto = {
-  purchaseId: number;
-  purchaseDate: Date;
-  supplierName: string | null;
-  items: PurchaseReturnableItemDto[];
-};
-
-export type SaleReturnDetailDto = {
-  id: number;
-  saleId: number;
-  invoiceNumber: string;
-  returnDate: Date;
-  totalAmountCents: number;
-  notes: string | null;
-  itemCount: number;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-export type PurchaseReturnDetailDto = {
-  id: number;
-  purchaseId: number;
-  returnDate: Date;
-  supplierName: string | null;
-  totalAmountCents: number;
-  notes: string | null;
-  itemCount: number;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-export type ReturnsApi = {
-  listSaleCandidates(): Promise<SaleReturnCandidateDto[]>;
-  createSaleReturn(input: SaleReturnInput): Promise<SaleReturnDetailDto>;
-  listSaleReturns(): Promise<SaleReturnDetailDto[]>;
-  listPurchaseCandidates(): Promise<PurchaseReturnCandidateDto[]>;
-  createPurchaseReturn(input: PurchaseReturnInput): Promise<PurchaseReturnDetailDto>;
-  listPurchaseReturns(): Promise<PurchaseReturnDetailDto[]>;
-};
-
-export type InvoiceBusinessSettingsDto = {
-  businessName: string;
-  phone: string | null;
-  email: string | null;
-  address: string | null;
-  currencySymbol: string;
-  invoicePrefix: string;
-};
-
-export type InvoiceLineItemDto = {
-  id: number;
-  productId: number;
-  variantLabel: string;
-  productName: string;
-  productSku: string;
-  quantity: number;
-  unitPriceCents: number;
-  discountAmountCents: number;
-  totalAmountCents: number;
-};
-
-export type InvoiceDetailDto = {
-  saleId: number;
-  invoiceNumber: string;
-  saleDate: Date;
-  customerName: string | null;
-  customerPhone: string | null;
-  customerEmail: string | null;
+export type BillDocumentDto = SaleDetailDto & {
   customerAddress: string | null;
-  subtotalCents: number;
-  discountAmountCents: number;
-  totalAmountCents: number;
-  paymentMethod: string | null;
-  notes: string | null;
-  business: InvoiceBusinessSettingsDto;
-  items: InvoiceLineItemDto[];
-};
-
-/** One sale on a statement, with the lines that made it up. */
-export type StatementSaleDto = {
-  saleId: number;
-  invoiceNumber: string;
-  saleDate: Date;
-  subtotalCents: number;
-  discountAmountCents: number;
-  totalAmountCents: number;
-  paymentMethod: string | null;
-  notes: string | null;
-  items: InvoiceLineItemDto[];
-};
-
-export type StatementEntryDto = LedgerEntryDto & {
-  sale: StatementSaleDto | null;
-};
-
-export type CustomerStatementDto = {
-  customerId: number;
-  customerName: string;
-  customerPhone: string | null;
-  customerEmail: string | null;
-  customerAddress: string | null;
-  generatedAt: Date;
-  openingBalanceCents: number;
-  invoicedCents: number;
-  paidCents: number;
-  returnedCents: number;
-  balanceCents: number;
-  business: InvoiceBusinessSettingsDto;
-  entries: StatementEntryDto[];
+  business: BusinessDocumentSettingsDto;
 };
 
 export type InvoiceFolderDto = {
@@ -581,6 +311,8 @@ export type SavePdfInput = {
   html: string;
   fileName: string;
   saveAs?: boolean;
+  /** Wide documents such as the khata print sideways. */
+  landscape?: boolean;
 };
 
 /** `filePath` is null when the save dialog was closed without picking a file. */
@@ -590,14 +322,17 @@ export type SavePdfResultDto = {
 };
 
 export type InvoiceApi = {
-  getBySaleId(saleId: number): Promise<InvoiceDetailDto>;
-  getCustomerStatement(customerId: number): Promise<CustomerStatementDto>;
+  getBill(saleId: number): Promise<BillDocumentDto>;
   getFolder(): Promise<InvoiceFolderDto>;
   chooseFolder(): Promise<string | null>;
   updateFolder(folder: string): Promise<InvoiceFolderDto>;
   savePdf(input: SavePdfInput): Promise<SavePdfResultDto>;
   reveal(filePath: string): Promise<void>;
 };
+
+// ---------------------------------------------------------------------------
+// Backup, settings, security, updates
+// ---------------------------------------------------------------------------
 
 export type BackupSettingsDto = {
   backupLocation: string;
@@ -638,31 +373,6 @@ export type SettingsApi = {
   updateBusinessSettings(input: BusinessSettingsDto): Promise<BusinessSettingsDto>;
 };
 
-export type StockAdjustmentInput = {
-  variantId: number;
-  newStock: number;
-  reason: string;
-  actorName?: string | null;
-};
-
-export type StockAdjustmentDto = {
-  productId: number;
-  variantId: number;
-  productName: string;
-  productSku: string;
-  variantLabel: string;
-  variantSku: string;
-  stockBefore: number;
-  stockAfter: number;
-  quantityChange: number;
-  stockMovementId: number;
-  auditLogId: number;
-};
-
-export type StockApi = {
-  adjust(input: StockAdjustmentInput): Promise<StockAdjustmentDto>;
-};
-
 export type UpdateCheckResult =
   | { status: "dev-mode" }
   | { status: "up-to-date"; currentVersion: string }
@@ -672,93 +382,6 @@ export type UpdateCheckResult =
 
 export type UpdateApi = {
   check(): Promise<UpdateCheckResult>;
-};
-
-export type LedgerPartyType = "customer" | "supplier";
-
-export type PaymentInput = {
-  partyType: LedgerPartyType;
-  partyId: number;
-  amountCents: number;
-  paymentDate: Date | string;
-  method?: string | null;
-  notes?: string | null;
-};
-
-export type PaymentDto = {
-  id: number;
-  partyType: LedgerPartyType;
-  partyId: number;
-  direction: "in" | "out";
-  amountCents: number;
-  paymentDate: Date;
-  method: string | null;
-  notes: string | null;
-  saleId: number | null;
-  purchaseId: number | null;
-};
-
-export type LedgerEntryDto = {
-  date: Date;
-  kind: "opening" | "sale" | "purchase" | "payment" | "sale_return" | "purchase_return";
-  reference: string;
-  description: string;
-  /** The sale behind this line, when there is one, so its invoice can be opened from the khata. */
-  saleId: number | null;
-  debitCents: number;
-  creditCents: number;
-  balanceCents: number;
-};
-
-export type LedgerPartySummaryDto = {
-  partyType: LedgerPartyType;
-  partyId: number;
-  partyName: string;
-  phone: string | null;
-  openingBalanceCents: number;
-  invoicedCents: number;
-  paidCents: number;
-  returnedCents: number;
-  balanceCents: number;
-};
-
-export type LedgerStatementDto = LedgerPartySummaryDto & {
-  entries: LedgerEntryDto[];
-};
-
-export type LedgerSummaryDto = {
-  customers: LedgerPartySummaryDto[];
-  suppliers: LedgerPartySummaryDto[];
-  customerReceivableCents: number;
-  supplierPayableCents: number;
-};
-
-/** A sale still carrying the old "blank meant paid in full" settlement. */
-export type PaidInFullSaleDto = {
-  saleId: number;
-  invoiceNumber: string;
-  customerId: number | null;
-  customerName: string | null;
-  saleDate: Date;
-  totalAmountCents: number;
-  amountPaidCents: number;
-  paymentMethod: string | null;
-  notes: string | null;
-};
-
-export type KhataRepairResultDto = {
-  movedCount: number;
-  movedAmountCents: number;
-  skippedSaleIds: number[];
-};
-
-export type LedgerApi = {
-  getSummary(): Promise<LedgerSummaryDto>;
-  getStatement(partyType: LedgerPartyType, partyId: number): Promise<LedgerStatementDto>;
-  recordPayment(input: PaymentInput): Promise<PaymentDto>;
-  deletePayment(id: number): Promise<void>;
-  listPaidInFullSales(): Promise<PaidInFullSaleDto[]>;
-  moveSalesToKhata(saleIds: number[], actorName?: string | null): Promise<KhataRepairResultDto>;
 };
 
 export type ThemePreference = "light" | "dark" | "system";
@@ -773,6 +396,7 @@ export type SecurityApi = {
   clearEditPassword(currentPassword: string): Promise<EditPasswordStatusDto>;
   verifyEditPassword(password: string): Promise<boolean>;
 };
+
 export type StyleCraftApi = {
   audit: AuditApi;
   backup: BackupApi;
@@ -780,13 +404,9 @@ export type StyleCraftApi = {
   dashboard: DashboardApi;
   invoices: InvoiceApi;
   ledger: LedgerApi;
-  products: ProductApi;
-  purchases: PurchaseApi;
   reports: ReportsApi;
-  returns: ReturnsApi;
   sales: SalesApi;
   security: SecurityApi;
   settings: SettingsApi;
-  stock: StockApi;
   update: UpdateApi;
 };

@@ -1,8 +1,8 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { createDb } from "./client.js";
 import { runMigrations } from "./migrate.js";
-import { customers, suppliers } from "./schema.js";
+import { customers, payments, sales } from "./schema.js";
 
 export type ContactInput = {
   name: string;
@@ -10,7 +10,7 @@ export type ContactInput = {
   email?: string | null;
   address?: string | null;
   notes?: string | null;
-  /** What the party already owed before any invoice here. Negative is money held in advance. */
+  /** What the customer already owed before any bill here. Negative is money held in advance. */
   openingBalanceCents?: number;
 };
 
@@ -40,7 +40,7 @@ function normalizeContactInput(input: ContactInput) {
   const name = input.name.trim();
 
   if (!name) {
-    throw new ContactValidationError("Contact name is required.");
+    throw new ContactValidationError("Customer name is required.");
   }
 
   const openingBalanceCents = input.openingBalanceCents ?? 0;
@@ -79,20 +79,6 @@ function matchesSearch(contact: ContactDto, search: string) {
   );
 }
 
-function toSupplierDto(row: typeof suppliers.$inferSelect): ContactDto {
-  return {
-    id: row.id,
-    name: row.name,
-    phone: row.phone,
-    email: row.email,
-    address: row.address,
-    notes: row.notes,
-    openingBalanceCents: row.openingBalanceCents,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
-
 function toCustomerDto(row: typeof customers.$inferSelect): ContactDto {
   return {
     id: row.id,
@@ -105,67 +91,6 @@ function toCustomerDto(row: typeof customers.$inferSelect): ContactDto {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
-}
-
-export function listSuppliers(databasePath?: string, filters: ContactListFilters = {}): ContactDto[] {
-  runMigrations(databasePath);
-  const { sqlite, db } = createDb(databasePath);
-
-  try {
-    return db
-      .select()
-      .from(suppliers)
-      .orderBy(suppliers.name)
-      .all()
-      .map(toSupplierDto)
-      .filter((supplier) => matchesSearch(supplier, filters.search ?? ""));
-  } finally {
-    sqlite.close();
-  }
-}
-
-export function createSupplier(databasePath: string | undefined, input: ContactInput): ContactDto {
-  runMigrations(databasePath);
-  const { sqlite, db } = createDb(databasePath);
-
-  try {
-    const normalizedInput = normalizeContactInput(input);
-    const insertedSupplier = db.insert(suppliers).values(normalizedInput).returning({ id: suppliers.id }).get();
-    const supplier = db.select().from(suppliers).where(eq(suppliers.id, insertedSupplier.id)).get();
-
-    if (supplier === undefined) {
-      throw new ContactValidationError("Supplier was not found after creation.");
-    }
-
-    return toSupplierDto(supplier);
-  } finally {
-    sqlite.close();
-  }
-}
-
-export function updateSupplier(databasePath: string | undefined, id: number, input: ContactInput): ContactDto {
-  validateId(id, "Supplier");
-  runMigrations(databasePath);
-  const { sqlite, db } = createDb(databasePath);
-
-  try {
-    const normalizedInput = normalizeContactInput(input);
-    const result = db.update(suppliers).set({ ...normalizedInput, updatedAt: new Date() }).where(eq(suppliers.id, id)).run();
-
-    if (result.changes === 0) {
-      throw new ContactValidationError("Supplier was not found.");
-    }
-
-    const supplier = db.select().from(suppliers).where(eq(suppliers.id, id)).get();
-
-    if (supplier === undefined) {
-      throw new ContactValidationError("Supplier was not found after update.");
-    }
-
-    return toSupplierDto(supplier);
-  } finally {
-    sqlite.close();
-  }
 }
 
 export function listCustomers(databasePath?: string, filters: ContactListFilters = {}): ContactDto[] {
@@ -224,6 +149,33 @@ export function updateCustomer(databasePath: string | undefined, id: number, inp
     }
 
     return toCustomerDto(customer);
+  } finally {
+    sqlite.close();
+  }
+}
+
+/**
+ * Removes a customer entered by mistake. One with any bill or payment on their
+ * khata is kept, because deleting them would silently rewrite that history.
+ */
+export function deleteCustomer(databasePath: string | undefined, id: number): void {
+  validateId(id, "Customer");
+  runMigrations(databasePath);
+  const { sqlite, db } = createDb(databasePath);
+
+  try {
+    const billCount = db.select({ count: sql<number>`count(*)` }).from(sales).where(eq(sales.customerId, id)).get()?.count ?? 0;
+    const paymentCount = db.select({ count: sql<number>`count(*)` }).from(payments).where(eq(payments.customerId, id)).get()?.count ?? 0;
+
+    if (billCount > 0 || paymentCount > 0) {
+      throw new ContactValidationError("This customer has bills or payments on their khata, so they cannot be deleted.");
+    }
+
+    const result = db.delete(customers).where(eq(customers.id, id)).run();
+
+    if (result.changes === 0) {
+      throw new ContactValidationError("Customer was not found.");
+    }
   } finally {
     sqlite.close();
   }

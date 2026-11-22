@@ -1,71 +1,22 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, gte, lt, sql } from "drizzle-orm";
 
+import { emptyWorkAmounts, sumWorkAmounts, workKinds } from "../src/lib/job-math.js";
+import type {
+  BusinessDocumentSettingsDto,
+  LedgerCustomerSummaryDto,
+  LedgerEntryDto,
+  LedgerFilters,
+  LedgerStatementDto,
+  LedgerSummaryDto,
+  PaymentDto,
+  PaymentInput,
+} from "../src/types/stylecraft-api.js";
 import { createDb } from "./client.js";
+import { endOfDayExclusive, normalizeEntryDate, parseDay } from "./dates.js";
 import { runMigrations } from "./migrate.js";
-import { customers, payments, purchaseReturns, purchases, saleReturns, sales, suppliers } from "./schema.js";
-
-export type LedgerPartyType = "customer" | "supplier";
-
-export type PaymentInput = {
-  partyType: LedgerPartyType;
-  partyId: number;
-  amountCents: number;
-  paymentDate: Date | string;
-  method?: string | null;
-  notes?: string | null;
-};
-
-export type PaymentDto = {
-  id: number;
-  partyType: LedgerPartyType;
-  partyId: number;
-  direction: "in" | "out";
-  amountCents: number;
-  paymentDate: Date;
-  method: string | null;
-  notes: string | null;
-  saleId: number | null;
-  purchaseId: number | null;
-};
-
-/**
- * A single line of a khata. `debitCents` is what the party owes the shop (or the
- * shop owes them, for suppliers) and `creditCents` is what has settled.
- */
-export type LedgerEntryDto = {
-  date: Date;
-  kind: "opening" | "sale" | "purchase" | "payment" | "sale_return" | "purchase_return";
-  reference: string;
-  description: string;
-  /** The sale behind this line, when there is one, so its invoice can be opened from the khata. */
-  saleId: number | null;
-  debitCents: number;
-  creditCents: number;
-  balanceCents: number;
-};
-
-export type LedgerPartySummaryDto = {
-  partyType: LedgerPartyType;
-  partyId: number;
-  partyName: string;
-  phone: string | null;
-  openingBalanceCents: number;
-  invoicedCents: number;
-  paidCents: number;
-  returnedCents: number;
-  balanceCents: number;
-};
-
-export type LedgerStatementDto = LedgerPartySummaryDto & {
-  entries: LedgerEntryDto[];
-};
-
-export type LedgerSummaryDto = {
-  customers: LedgerPartySummaryDto[];
-  suppliers: LedgerPartySummaryDto[];
-  customerReceivableCents: number;
-  supplierPayableCents: number;
-};
+import { loadJobsForSales } from "./sales-service.js";
+import { auditLogs, customers, payments, sales } from "./schema.js";
+import { getBusinessSettings } from "./settings-service.js";
 
 export class LedgerValidationError extends Error {
   constructor(message: string) {
@@ -80,118 +31,64 @@ function nullableTrimmed(value: string | null | undefined) {
   return value?.trim() || null;
 }
 
-function normalizePaymentDate(value: Date | string) {
-  const date = value instanceof Date ? value : new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    throw new LedgerValidationError("Payment date is required.");
+function parseFilterDay(value: string | null | undefined) {
+  try {
+    return { start: parseDay(value), end: endOfDayExclusive(value) };
+  } catch (error) {
+    throw new LedgerValidationError(error instanceof Error ? error.message : "Date is not valid.");
   }
-
-  return date;
 }
 
-function normalizePaymentInput(input: PaymentInput) {
-  if (input.partyType !== "customer" && input.partyType !== "supplier") {
-    throw new LedgerValidationError("Payment must belong to a customer or a supplier.");
-  }
+function customerSummaries(db: Db): LedgerCustomerSummaryDto[] {
+  const billed = new Map(
+    db
+      .select({ customerId: sales.customerId, total: sql<number>`coalesce(sum(${sales.totalAmountCents}), 0)`, last: sql<number | null>`max(${sales.saleDate})` })
+      .from(sales)
+      .groupBy(sales.customerId)
+      .all()
+      .map((row) => [row.customerId, row]),
+  );
+  const received = new Map(
+    db
+      .select({ customerId: payments.customerId, total: sql<number>`coalesce(sum(${payments.amountCents}), 0)`, last: sql<number | null>`max(${payments.paymentDate})` })
+      .from(payments)
+      .groupBy(payments.customerId)
+      .all()
+      .map((row) => [row.customerId, row]),
+  );
 
-  if (!Number.isInteger(input.partyId) || input.partyId <= 0) {
-    throw new LedgerValidationError(input.partyType === "customer" ? "Customer must be selected." : "Supplier must be selected.");
-  }
+  return db
+    .select()
+    .from(customers)
+    .orderBy(asc(customers.name))
+    .all()
+    .map((customer) => {
+      const bill = billed.get(customer.id);
+      const payment = received.get(customer.id);
+      const billedCents = bill?.total ?? 0;
+      const receivedCents = payment?.total ?? 0;
+      const last = Math.max(bill?.last ?? 0, payment?.last ?? 0);
 
-  if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
-    throw new LedgerValidationError("Payment amount must be more than zero.");
-  }
+      return {
+        customerId: customer.id,
+        customerName: customer.name,
+        phone: customer.phone,
+        openingBalanceCents: customer.openingBalanceCents,
+        billedCents,
+        receivedCents,
+        balanceCents: customer.openingBalanceCents + billedCents - receivedCents,
+        lastActivityDate: last > 0 ? new Date(last) : null,
+      };
+    });
+}
+
+export function computeLedgerSummary(db: Db): LedgerSummaryDto {
+  const rows = customerSummaries(db);
 
   return {
-    partyType: input.partyType,
-    partyId: input.partyId,
-    direction: input.partyType === "customer" ? ("in" as const) : ("out" as const),
-    amountCents: input.amountCents,
-    paymentDate: normalizePaymentDate(input.paymentDate),
-    method: nullableTrimmed(input.method),
-    notes: nullableTrimmed(input.notes),
+    customers: rows,
+    totalReceivableCents: rows.reduce((sum, row) => sum + Math.max(row.balanceCents, 0), 0),
   };
-}
-
-function customerSummaries(db: Db): LedgerPartySummaryDto[] {
-  const rows = db.select().from(customers).orderBy(asc(customers.name)).all();
-
-  return rows.map((customer) => {
-    const invoicedCents =
-      db
-        .select({ total: sql<number>`coalesce(sum(${sales.totalAmountCents}), 0)` })
-        .from(sales)
-        .where(eq(sales.customerId, customer.id))
-        .get()?.total ?? 0;
-
-    const paidCents =
-      db
-        .select({ total: sql<number>`coalesce(sum(${payments.amountCents}), 0)` })
-        .from(payments)
-        .where(and(eq(payments.partyType, "customer"), eq(payments.partyId, customer.id)))
-        .get()?.total ?? 0;
-
-    const returnedCents =
-      db
-        .select({ total: sql<number>`coalesce(sum(${saleReturns.totalAmountCents}), 0)` })
-        .from(saleReturns)
-        .innerJoin(sales, eq(saleReturns.saleId, sales.id))
-        .where(eq(sales.customerId, customer.id))
-        .get()?.total ?? 0;
-
-    return {
-      partyType: "customer" as const,
-      partyId: customer.id,
-      partyName: customer.name,
-      phone: customer.phone,
-      openingBalanceCents: customer.openingBalanceCents,
-      invoicedCents,
-      paidCents,
-      returnedCents,
-      balanceCents: customer.openingBalanceCents + invoicedCents - paidCents - returnedCents,
-    };
-  });
-}
-
-function supplierSummaries(db: Db): LedgerPartySummaryDto[] {
-  const rows = db.select().from(suppliers).orderBy(asc(suppliers.name)).all();
-
-  return rows.map((supplier) => {
-    const invoicedCents =
-      db
-        .select({ total: sql<number>`coalesce(sum(${purchases.totalAmountCents}), 0)` })
-        .from(purchases)
-        .where(eq(purchases.supplierId, supplier.id))
-        .get()?.total ?? 0;
-
-    const paidCents =
-      db
-        .select({ total: sql<number>`coalesce(sum(${payments.amountCents}), 0)` })
-        .from(payments)
-        .where(and(eq(payments.partyType, "supplier"), eq(payments.partyId, supplier.id)))
-        .get()?.total ?? 0;
-
-    const returnedCents =
-      db
-        .select({ total: sql<number>`coalesce(sum(${purchaseReturns.totalAmountCents}), 0)` })
-        .from(purchaseReturns)
-        .innerJoin(purchases, eq(purchaseReturns.purchaseId, purchases.id))
-        .where(eq(purchases.supplierId, supplier.id))
-        .get()?.total ?? 0;
-
-    return {
-      partyType: "supplier" as const,
-      partyId: supplier.id,
-      partyName: supplier.name,
-      phone: supplier.phone,
-      openingBalanceCents: supplier.openingBalanceCents,
-      invoicedCents,
-      paidCents,
-      returnedCents,
-      balanceCents: supplier.openingBalanceCents + invoicedCents - paidCents - returnedCents,
-    };
-  });
 }
 
 export function getLedgerSummary(databasePath?: string): LedgerSummaryDto {
@@ -199,216 +96,268 @@ export function getLedgerSummary(databasePath?: string): LedgerSummaryDto {
   const { sqlite, db } = createDb(databasePath);
 
   try {
-    const customerRows = customerSummaries(db);
-    const supplierRows = supplierSummaries(db);
+    return computeLedgerSummary(db);
+  } finally {
+    sqlite.close();
+  }
+}
+
+function toDocumentSettings(databasePath: string | undefined): BusinessDocumentSettingsDto {
+  const { businessName, phone, email, address, currencySymbol } = getBusinessSettings(databasePath);
+
+  return { businessName, phone, email, address, currencySymbol };
+}
+
+/**
+ * The khata of one customer, like a printed statement of account: the balance
+ * brought forward to the first day asked for, then every bill (one line per job,
+ * closed by a sub-total) and every payment in date order, each with the running
+ * balance after it.
+ */
+export function getLedgerStatement(databasePath: string | undefined, customerId: number, filters: LedgerFilters = {}): LedgerStatementDto {
+  if (!Number.isInteger(customerId) || customerId <= 0) {
+    throw new LedgerValidationError("Customer must be selected.");
+  }
+
+  runMigrations(databasePath);
+  const { sqlite, db } = createDb(databasePath);
+
+  try {
+    const customer = db.select().from(customers).where(eq(customers.id, customerId)).get();
+
+    if (customer === undefined) {
+      throw new LedgerValidationError("Customer was not found.");
+    }
+
+    const start = parseFilterDay(filters.startDate).start;
+    const end = parseFilterDay(filters.endDate).end;
+
+    if (start !== null && end !== null && end <= start) {
+      throw new LedgerValidationError("The from date must be on or before the to date.");
+    }
+
+    let openingBalanceCents = customer.openingBalanceCents;
+
+    if (start !== null) {
+      const billedBefore =
+        db
+          .select({ total: sql<number>`coalesce(sum(${sales.totalAmountCents}), 0)` })
+          .from(sales)
+          .where(and(eq(sales.customerId, customerId), lt(sales.saleDate, start)))
+          .get()?.total ?? 0;
+      const receivedBefore =
+        db
+          .select({ total: sql<number>`coalesce(sum(${payments.amountCents}), 0)` })
+          .from(payments)
+          .where(and(eq(payments.customerId, customerId), lt(payments.paymentDate, start)))
+          .get()?.total ?? 0;
+
+      openingBalanceCents += billedBefore - receivedBefore;
+    }
+
+    const saleConditions = [eq(sales.customerId, customerId)];
+    const paymentConditions = [eq(payments.customerId, customerId)];
+
+    if (start !== null) {
+      saleConditions.push(gte(sales.saleDate, start));
+      paymentConditions.push(gte(payments.paymentDate, start));
+    }
+
+    if (end !== null) {
+      saleConditions.push(lt(sales.saleDate, end));
+      paymentConditions.push(lt(payments.paymentDate, end));
+    }
+
+    const saleRows = db.select().from(sales).where(and(...saleConditions)).all();
+    const paymentRows = db.select().from(payments).where(and(...paymentConditions)).all();
+    const jobsBySale = loadJobsForSales(
+      db,
+      saleRows.map((row) => row.id),
+    );
+
+    // Same-day entries keep the order they were typed in, so a payment taken
+    // before the day's bill shows above it, as on a paper khata.
+    type Pending = { date: Date; createdAt: Date; order: number; build: (balanceCents: number) => LedgerEntryDto & { closingBalanceCents: number } };
+    const pending: Pending[] = [
+      ...saleRows.map((sale) => ({
+        date: sale.saleDate,
+        createdAt: sale.createdAt,
+        order: sale.id,
+        build: (balanceBefore: number) => {
+          let running = balanceBefore;
+          const jobs = (jobsBySale.get(sale.id) ?? []).map((job) => {
+            running += job.totalAmountCents;
+            return { ...job, balanceCents: running };
+          });
+
+          return {
+            kind: "bill" as const,
+            saleId: sale.id,
+            billNumber: sale.billNumber,
+            date: sale.saleDate,
+            notes: sale.notes,
+            jobs,
+            workTotals: sumWorkAmounts(jobs),
+            totalAmountCents: sale.totalAmountCents,
+            balanceCents: balanceBefore + sale.totalAmountCents,
+            closingBalanceCents: balanceBefore + sale.totalAmountCents,
+          };
+        },
+      })),
+      ...paymentRows.map((payment) => ({
+        date: payment.paymentDate,
+        createdAt: payment.createdAt,
+        order: payment.id,
+        build: (balanceBefore: number) => ({
+          kind: "payment" as const,
+          paymentId: payment.id,
+          receiptNumber: payment.receiptNumber,
+          date: payment.paymentDate,
+          narration: payment.narration,
+          amountCents: payment.amountCents,
+          balanceCents: balanceBefore - payment.amountCents,
+          closingBalanceCents: balanceBefore - payment.amountCents,
+        }),
+      })),
+    ].sort((left, right) => left.date.getTime() - right.date.getTime() || left.createdAt.getTime() - right.createdAt.getTime() || left.order - right.order);
+
+    let balanceCents = openingBalanceCents;
+    const entries: LedgerEntryDto[] = pending.map((item) => {
+      const { closingBalanceCents, ...entry } = item.build(balanceCents);
+      balanceCents = closingBalanceCents;
+      return entry;
+    });
+
+    const workTotals = emptyWorkAmounts();
+    let debitCents = 0;
+    let creditCents = 0;
+
+    for (const entry of entries) {
+      if (entry.kind === "bill") {
+        debitCents += entry.totalAmountCents;
+
+        for (const kind of workKinds) {
+          workTotals[kind] += entry.workTotals[kind];
+        }
+      } else {
+        creditCents += entry.amountCents;
+      }
+    }
 
     return {
-      customers: customerRows,
-      suppliers: supplierRows,
-      customerReceivableCents: customerRows.reduce((sum, row) => sum + Math.max(row.balanceCents, 0), 0),
-      supplierPayableCents: supplierRows.reduce((sum, row) => sum + Math.max(row.balanceCents, 0), 0),
+      customer: { id: customer.id, name: customer.name, phone: customer.phone, address: customer.address },
+      startDate: filters.startDate?.trim() || null,
+      endDate: filters.endDate?.trim() || null,
+      openingBalanceCents,
+      entries,
+      workTotals,
+      debitCents,
+      creditCents,
+      closingBalanceCents: balanceCents,
+      business: toDocumentSettings(databasePath),
+      generatedAt: new Date(),
     };
   } finally {
     sqlite.close();
   }
 }
 
-/**
- * Turns the loose rows into a running khata. The opening balance is always the
- * first line, whatever its date, because everything after it is measured from
- * there.
- */
-function buildEntries(openingBalanceCents: number, openingDate: Date, rows: Omit<LedgerEntryDto, "balanceCents">[]): LedgerEntryDto[] {
-  const sorted = [...rows].sort((left, right) => left.date.getTime() - right.date.getTime());
-  const entries: LedgerEntryDto[] = [];
-  let balanceCents = 0;
+function nextReceiptNumberIn(db: Db | Parameters<Parameters<Db["transaction"]>[0]>[0]) {
+  const row = db.select({ max: sql<number | null>`max(${payments.receiptNumber})` }).from(payments).get();
 
-  if (openingBalanceCents !== 0) {
-    balanceCents = openingBalanceCents;
-    entries.push({
-      date: openingDate,
-      kind: "opening",
-      reference: "Opening",
-      description: "Balance carried over from before",
-      saleId: null,
-      debitCents: Math.max(openingBalanceCents, 0),
-      creditCents: Math.max(-openingBalanceCents, 0),
-      balanceCents,
-    });
-  }
-
-  for (const row of sorted) {
-    balanceCents += row.debitCents - row.creditCents;
-    entries.push({ ...row, balanceCents });
-  }
-
-  return entries;
+  return (row?.max ?? 0) + 1;
 }
 
-export function getLedgerStatement(databasePath: string | undefined, partyType: LedgerPartyType, partyId: number): LedgerStatementDto {
+export function getNextReceiptNumber(databasePath?: string): number {
   runMigrations(databasePath);
   const { sqlite, db } = createDb(databasePath);
 
   try {
-    const summaries = partyType === "customer" ? customerSummaries(db) : supplierSummaries(db);
-    const summary = summaries.find((row) => row.partyId === partyId);
-
-    if (summary === undefined) {
-      throw new LedgerValidationError(partyType === "customer" ? "Customer was not found." : "Supplier was not found.");
-    }
-
-    const rows: Omit<LedgerEntryDto, "balanceCents">[] = [];
-
-    if (partyType === "customer") {
-      for (const sale of db.select().from(sales).where(eq(sales.customerId, partyId)).all()) {
-        rows.push({
-          date: sale.saleDate,
-          kind: "sale",
-          reference: sale.invoiceNumber,
-          description: "Sale invoice",
-          saleId: sale.id,
-          debitCents: sale.totalAmountCents,
-          creditCents: 0,
-        });
-      }
-
-      for (const row of db
-        .select({ id: saleReturns.id, returnDate: saleReturns.returnDate, totalAmountCents: saleReturns.totalAmountCents, invoiceNumber: sales.invoiceNumber, saleId: sales.id })
-        .from(saleReturns)
-        .innerJoin(sales, eq(saleReturns.saleId, sales.id))
-        .where(eq(sales.customerId, partyId))
-        .all()) {
-        rows.push({
-          date: row.returnDate,
-          kind: "sale_return",
-          reference: row.invoiceNumber,
-          description: "Sale return",
-          saleId: row.saleId,
-          debitCents: 0,
-          creditCents: row.totalAmountCents,
-        });
-      }
-    } else {
-      for (const purchase of db.select().from(purchases).where(eq(purchases.supplierId, partyId)).all()) {
-        rows.push({
-          date: purchase.purchaseDate,
-          kind: "purchase",
-          reference: `PUR-${String(purchase.id).padStart(6, "0")}`,
-          description: "Purchase bill",
-          saleId: null,
-          debitCents: purchase.totalAmountCents,
-          creditCents: 0,
-        });
-      }
-
-      for (const row of db
-        .select({ id: purchaseReturns.id, returnDate: purchaseReturns.returnDate, totalAmountCents: purchaseReturns.totalAmountCents, purchaseId: purchaseReturns.purchaseId })
-        .from(purchaseReturns)
-        .innerJoin(purchases, eq(purchaseReturns.purchaseId, purchases.id))
-        .where(eq(purchases.supplierId, partyId))
-        .all()) {
-        rows.push({
-          date: row.returnDate,
-          kind: "purchase_return",
-          reference: `PUR-${String(row.purchaseId).padStart(6, "0")}`,
-          description: "Purchase return",
-          saleId: null,
-          debitCents: 0,
-          creditCents: row.totalAmountCents,
-        });
-      }
-    }
-
-    for (const payment of db
-      .select()
-      .from(payments)
-      .where(and(eq(payments.partyType, partyType), eq(payments.partyId, partyId)))
-      .all()) {
-      rows.push({
-        date: payment.paymentDate,
-        kind: "payment",
-        reference: payment.method ?? "Payment",
-        description: payment.notes ?? (partyType === "customer" ? "Payment received" : "Payment made"),
-        saleId: payment.saleId,
-        debitCents: 0,
-        creditCents: payment.amountCents,
-      });
-    }
-
-    const party =
-      partyType === "customer"
-        ? db.select({ createdAt: customers.createdAt }).from(customers).where(eq(customers.id, partyId)).get()
-        : db.select({ createdAt: suppliers.createdAt }).from(suppliers).where(eq(suppliers.id, partyId)).get();
-
-    return { ...summary, entries: buildEntries(summary.openingBalanceCents, party?.createdAt ?? new Date(0), rows) };
+    return nextReceiptNumberIn(db);
   } finally {
     sqlite.close();
   }
 }
 
 export function recordPayment(databasePath: string | undefined, input: PaymentInput): PaymentDto {
+  if (!Number.isInteger(input.customerId) || input.customerId <= 0) {
+    throw new LedgerValidationError("Customer must be selected.");
+  }
+
+  if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
+    throw new LedgerValidationError("Payment amount must be more than zero.");
+  }
+
+  let paymentDate: Date;
+
+  try {
+    paymentDate = normalizeEntryDate(input.paymentDate, "Payment date");
+  } catch (error) {
+    throw new LedgerValidationError(error instanceof Error ? error.message : "Payment date is required.");
+  }
+
   runMigrations(databasePath);
   const { sqlite, db } = createDb(databasePath);
 
   try {
-    const normalizedInput = normalizePaymentInput(input);
-
-    if (normalizedInput.partyType === "customer") {
-      const customer = db.select({ id: customers.id }).from(customers).where(eq(customers.id, normalizedInput.partyId)).get();
+    const row = db.transaction((tx) => {
+      const customer = tx.select({ id: customers.id }).from(customers).where(eq(customers.id, input.customerId)).get();
 
       if (customer === undefined) {
         throw new LedgerValidationError("Customer was not found.");
       }
-    } else {
-      const supplier = db.select({ id: suppliers.id }).from(suppliers).where(eq(suppliers.id, normalizedInput.partyId)).get();
 
-      if (supplier === undefined) {
-        throw new LedgerValidationError("Supplier was not found.");
-      }
-    }
-
-    const inserted = db.insert(payments).values(normalizedInput).returning({ id: payments.id }).get();
-    const row = db.select().from(payments).where(eq(payments.id, inserted.id)).get();
-
-    if (row === undefined) {
-      throw new LedgerValidationError("Payment was not found after saving.");
-    }
+      return tx
+        .insert(payments)
+        .values({
+          receiptNumber: nextReceiptNumberIn(tx),
+          customerId: input.customerId,
+          paymentDate,
+          amountCents: input.amountCents,
+          narration: nullableTrimmed(input.narration),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .returning()
+        .get();
+    });
 
     return {
       id: row.id,
-      partyType: row.partyType,
-      partyId: row.partyId,
-      direction: row.direction,
+      receiptNumber: row.receiptNumber,
+      customerId: row.customerId,
       amountCents: row.amountCents,
       paymentDate: row.paymentDate,
-      method: row.method,
-      notes: row.notes,
-      saleId: row.saleId,
-      purchaseId: row.purchaseId,
+      narration: row.narration,
     };
   } finally {
     sqlite.close();
   }
 }
 
-export function deletePayment(databasePath: string | undefined, id: number): void {
+export function deletePayment(databasePath: string | undefined, id: number, actorName?: string | null): void {
   runMigrations(databasePath);
   const { sqlite, db } = createDb(databasePath);
 
   try {
-    const row = db.select().from(payments).where(eq(payments.id, id)).get();
+    db.transaction((tx) => {
+      const row = tx.select().from(payments).where(eq(payments.id, id)).get();
 
-    if (row === undefined) {
-      throw new LedgerValidationError("Payment was not found.");
-    }
+      if (row === undefined) {
+        throw new LedgerValidationError("Payment was not found.");
+      }
 
-    // Payments attached to an invoice were entered as part of that sale or
-    // purchase, so they are corrected by editing the invoice, not deleted here.
-    if (row.saleId !== null || row.purchaseId !== null) {
-      throw new LedgerValidationError("This payment was recorded with an invoice. Edit the invoice to change it.");
-    }
-
-    db.delete(payments).where(eq(payments.id, id)).run();
+      tx.delete(payments).where(eq(payments.id, id)).run();
+      tx.insert(auditLogs)
+        .values({
+          action: "payment.deleted",
+          entityType: "payment",
+          entityId: id,
+          actorName: nullableTrimmed(actorName),
+          details: JSON.stringify({ receiptNumber: row.receiptNumber, customerId: row.customerId, amountCents: row.amountCents, narration: row.narration }),
+        })
+        .run();
+    });
   } finally {
     sqlite.close();
   }

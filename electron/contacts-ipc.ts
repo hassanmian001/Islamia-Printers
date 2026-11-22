@@ -23,21 +23,9 @@ export function registerContactsHandlers(ipcMain: IpcMain) {
     return updateCustomer(getDatabasePath(), id, input);
   });
 
-  ipcMain.handle(contactsChannels.listSuppliers, async (_event, filters?: ContactListFilters) => {
-    const [{ getDatabasePath }, { listSuppliers }] = await Promise.all([import("../db/paths.js"), import("../db/contacts-service.js")]);
+  ipcMain.handle(contactsChannels.deleteCustomer, async (_event, id: number) => {
+    const [{ getDatabasePath }, { deleteCustomer }] = await Promise.all([import("../db/paths.js"), import("../db/contacts-service.js")]);
 
-    return listSuppliers(getDatabasePath(), filters);
-  });
-
-  ipcMain.handle(contactsChannels.createSupplier, async (_event, input: ContactInput) => {
-    const [{ getDatabasePath }, { createSupplier }] = await Promise.all([import("../db/paths.js"), import("../db/contacts-service.js")]);
-
-    return createSupplier(getDatabasePath(), input);
-  });
-
-  ipcMain.handle(contactsChannels.updateSupplier, async (_event, id: number, input: ContactInput) => {
-    const [{ getDatabasePath }, { updateSupplier }] = await Promise.all([import("../db/paths.js"), import("../db/contacts-service.js")]);
-
-    return updateSupplier(getDatabasePath(), id, input);
+    return deleteCustomer(getDatabasePath(), id);
   });
 }

@@ -20,14 +20,11 @@ export const contactsChannels = {
   listCustomers: "contacts:listCustomers",
   createCustomer: "contacts:createCustomer",
   updateCustomer: "contacts:updateCustomer",
-  listSuppliers: "contacts:listSuppliers",
-  createSupplier: "contacts:createSupplier",
-  updateSupplier: "contacts:updateSupplier",
+  deleteCustomer: "contacts:deleteCustomer",
 } as const;
 
 export const invoiceChannels = {
-  getBySaleId: "invoices:getBySaleId",
-  getCustomerStatement: "invoices:getCustomerStatement",
+  getBill: "invoices:getBill",
   getFolder: "invoices:getFolder",
   chooseFolder: "invoices:chooseFolder",
   updateFolder: "invoices:updateFolder",
@@ -35,41 +32,17 @@ export const invoiceChannels = {
   reveal: "invoices:reveal",
 } as const;
 
-export const productChannels = {
-  list: "products:list",
-  get: "products:get",
-  create: "products:create",
-  update: "products:update",
-  markInactive: "products:markInactive",
-} as const;
-
-export const purchaseChannels = {
-  list: "purchases:list",
-  create: "purchases:create",
-  listSuppliers: "suppliers:list",
-  createSupplier: "suppliers:create",
-} as const;
-
 export const reportsChannels = {
   getReports: "reports:getReports",
-} as const;
-
-export const returnsChannels = {
-  listSaleCandidates: "returns:listSaleCandidates",
-  createSaleReturn: "returns:createSaleReturn",
-  listSaleReturns: "returns:listSaleReturns",
-  listPurchaseCandidates: "returns:listPurchaseCandidates",
-  createPurchaseReturn: "returns:createPurchaseReturn",
-  listPurchaseReturns: "returns:listPurchaseReturns",
 } as const;
 
 export const salesChannels = {
   list: "sales:list",
   get: "sales:get",
+  nextBillNumber: "sales:nextBillNumber",
   create: "sales:create",
   update: "sales:update",
-  listCustomers: "customers:list",
-  createCustomer: "customers:create",
+  delete: "sales:delete",
 } as const;
 
 export const settingsChannels = {
@@ -80,10 +53,9 @@ export const settingsChannels = {
 export const ledgerChannels = {
   getSummary: "ledger:getSummary",
   getStatement: "ledger:getStatement",
+  nextReceiptNumber: "ledger:nextReceiptNumber",
   recordPayment: "ledger:recordPayment",
   deletePayment: "ledger:deletePayment",
-  listPaidInFullSales: "ledger:listPaidInFullSales",
-  moveSalesToKhata: "ledger:moveSalesToKhata",
 } as const;
 
 export const securityChannels = {
@@ -91,10 +63,6 @@ export const securityChannels = {
   setEditPassword: "security:setEditPassword",
   clearEditPassword: "security:clearEditPassword",
   verifyEditPassword: "security:verifyEditPassword",
-} as const;
-
-export const stockChannels = {
-  adjust: "stock:adjust",
 } as const;
 
 export const updateChannels = {

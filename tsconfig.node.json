@@ -11,6 +11,6 @@
     "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["electron/**/*.ts", "db/**/*.ts", "src/types/**/*.ts"],
+  "include": ["electron/**/*.ts", "db/**/*.ts", "src/types/**/*.ts", "src/lib/job-math.ts"],
   "exclude": ["db/**/*.test.ts"]
 }

@@ -12,11 +12,13 @@ type DocumentPanelProps = {
   html: string;
   /** Base name for the saved file; the main process makes it safe and adds ".pdf". */
   fileName: string;
+  /** Wide documents such as the khata are saved sideways. */
+  landscape?: boolean;
   onClose: () => void;
   children: ReactNode;
 };
 
-export default function DocumentPanel({ kicker, title, subtitle, html, fileName, onClose, children }: DocumentPanelProps) {
+export default function DocumentPanel({ kicker, title, subtitle, html, fileName, landscape = false, onClose, children }: DocumentPanelProps) {
   const [savedFilePath, setSavedFilePath] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +29,7 @@ export default function DocumentPanel({ kicker, title, subtitle, html, fileName,
     setIsSaving(true);
 
     try {
-      const result = await window.stylecraft.invoices.savePdf({ html, fileName, saveAs });
+      const result = await window.stylecraft.invoices.savePdf({ html, fileName, saveAs, landscape });
       setSavedFilePath(result.filePath);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not save the PDF.");

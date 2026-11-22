@@ -6,7 +6,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import ContactsScreen from "./ContactsScreen";
-import type { ContactsApi, ContactDto, StyleCraftApi } from "@/types/stylecraft-api";
+import { createMockApi } from "@/test/mock-api";
+import type { ContactsApi, ContactDto } from "@/types/stylecraft-api";
 
 const sampleCustomers: ContactDto[] = [
   {
@@ -33,20 +34,6 @@ const sampleCustomers: ContactDto[] = [
   },
 ];
 
-const sampleSuppliers: ContactDto[] = [
-  {
-    id: 10,
-    name: "Fabric House",
-    phone: "021-1111111",
-    email: "fabric@example.com",
-    address: "Karachi",
-    notes: null,
-    openingBalanceCents: 0,
-    createdAt: new Date("2026-01-03T00:00:00.000Z"),
-    updatedAt: new Date("2026-01-03T00:00:00.000Z"),
-  },
-];
-
 describe("ContactsScreen", () => {
   let contactsApi: ContactsApi;
 
@@ -59,34 +46,18 @@ describe("ContactsScreen", () => {
       listCustomers: vi.fn().mockResolvedValue(sampleCustomers),
       createCustomer: vi.fn().mockResolvedValue(sampleCustomers[0]),
       updateCustomer: vi.fn().mockResolvedValue(sampleCustomers[0]),
-      listSuppliers: vi.fn().mockResolvedValue(sampleSuppliers),
-      createSupplier: vi.fn().mockResolvedValue(sampleSuppliers[0]),
-      updateSupplier: vi.fn().mockResolvedValue(sampleSuppliers[0]),
+      deleteCustomer: vi.fn().mockResolvedValue(undefined),
     };
 
-    window.stylecraft = {
-      backup: {} as never,
-      contacts: contactsApi,
-      dashboard: {} as never,
-      invoices: {} as never,
-      products: {} as never,
-      purchases: {} as never,
-      reports: {} as never,
-      sales: {} as never,
-      settings: {} as never,
-      update: {} as never,
-    } satisfies StyleCraftApi;
+    window.stylecraft = createMockApi({ contacts: contactsApi });
   });
 
-  it("renders customers and switches to suppliers", async () => {
+  it("lists customers only", async () => {
     render(<ContactsScreen />);
 
     expect(await screen.findByText("Ali Khan")).toBeInTheDocument();
     expect(screen.getByText("Sara Ahmed")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Suppliers" }));
-
-    expect(screen.getByText("Fabric House")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Suppliers" })).not.toBeInTheDocument();
   });
 
   it("creates a customer with normalized optional fields", async () => {
@@ -94,7 +65,7 @@ describe("ContactsScreen", () => {
 
     await screen.findByText("Ali Khan");
 
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "  Hassan Tailors  " } });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "  Hassan Printers  " } });
     fireEvent.change(screen.getByLabelText("Phone"), { target: { value: " 0321 " } });
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: " " } });
     fireEvent.change(screen.getByLabelText("Address"), { target: { value: " Sialkot " } });
@@ -102,7 +73,7 @@ describe("ContactsScreen", () => {
 
     await waitFor(() => {
       expect(contactsApi.createCustomer).toHaveBeenCalledWith({
-        name: "Hassan Tailors",
+        name: "Hassan Printers",
         phone: "0321",
         email: null,
         address: "Sialkot",
@@ -112,29 +83,37 @@ describe("ContactsScreen", () => {
     });
   });
 
-  it("searches and edits suppliers", async () => {
+  it("searches and edits a customer", async () => {
     render(<ContactsScreen />);
 
     await screen.findByText("Ali Khan");
-    fireEvent.click(screen.getByRole("button", { name: "Suppliers" }));
-    fireEvent.change(screen.getByLabelText("Search suppliers"), { target: { value: "karachi" } });
+    fireEvent.change(screen.getByLabelText("Search customers"), { target: { value: "wholesale" } });
 
-    const row = screen.getByText("Fabric House").closest("tr");
-    expect(row).not.toBeNull();
+    expect(screen.queryByText("Ali Khan")).not.toBeInTheDocument();
+    const row = screen.getByText("Sara Ahmed").closest("tr");
     fireEvent.click(within(row as HTMLTableRowElement).getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Fabric House PK" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save supplier" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Sara Ahmed Printers" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save customer" }));
 
     await waitFor(() => {
-      expect(contactsApi.updateSupplier).toHaveBeenCalledWith(10, {
-        name: "Fabric House PK",
-        phone: "021-1111111",
-        email: "fabric@example.com",
-        address: "Karachi",
-        notes: null,
-        openingBalanceCents: 0,
-      });
+      expect(contactsApi.updateCustomer).toHaveBeenCalledWith(2, expect.objectContaining({ name: "Sara Ahmed Printers", email: "sara@example.com" }));
     });
+  });
+
+  it("deletes a customer after confirming, and shows why when it cannot", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<ContactsScreen />);
+
+    const row = (await screen.findByText("Sara Ahmed")).closest("tr");
+    fireEvent.click(within(row as HTMLTableRowElement).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(contactsApi.deleteCustomer).toHaveBeenCalledWith(2));
+
+    vi.mocked(window.stylecraft.contacts.deleteCustomer).mockRejectedValueOnce(new Error("This customer has bills or payments on their khata, so they cannot be deleted."));
+    const aliRow = screen.getByText("Ali Khan").closest("tr");
+    fireEvent.click(within(aliRow as HTMLTableRowElement).getByRole("button", { name: "Delete" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("cannot be deleted");
   });
 
   it("carries an old khata balance in as an opening balance", async () => {
@@ -142,12 +121,12 @@ describe("ContactsScreen", () => {
 
     await screen.findByText("Ali Khan");
 
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Nadeem Cloth" } });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Nadeem Stationers" } });
     fireEvent.change(screen.getByLabelText(/^Opening balance/), { target: { value: "1250.50" } });
     fireEvent.click(screen.getByRole("button", { name: "Add customer" }));
 
     await waitFor(() => {
-      expect(contactsApi.createCustomer).toHaveBeenCalledWith(expect.objectContaining({ name: "Nadeem Cloth", openingBalanceCents: 125_050 }));
+      expect(contactsApi.createCustomer).toHaveBeenCalledWith(expect.objectContaining({ name: "Nadeem Stationers", openingBalanceCents: 125_050 }));
     });
   });
 

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-import { auditChannels, backupChannels, contactsChannels, dashboardChannels, invoiceChannels, ledgerChannels, productChannels, purchaseChannels, reportsChannels, returnsChannels, salesChannels, securityChannels, settingsChannels, stockChannels, updateChannels } from "./ipc-channels.js";
+import { auditChannels, backupChannels, contactsChannels, dashboardChannels, invoiceChannels, ledgerChannels, reportsChannels, salesChannels, securityChannels, settingsChannels, updateChannels } from "./ipc-channels.js";
 import type { StyleCraftApi } from "../src/types/stylecraft-api.js";
 
 const stylecraftApi: StyleCraftApi = {
@@ -20,16 +20,13 @@ const stylecraftApi: StyleCraftApi = {
     listCustomers: (filters) => ipcRenderer.invoke(contactsChannels.listCustomers, filters),
     createCustomer: (input) => ipcRenderer.invoke(contactsChannels.createCustomer, input),
     updateCustomer: (id, input) => ipcRenderer.invoke(contactsChannels.updateCustomer, id, input),
-    listSuppliers: (filters) => ipcRenderer.invoke(contactsChannels.listSuppliers, filters),
-    createSupplier: (input) => ipcRenderer.invoke(contactsChannels.createSupplier, input),
-    updateSupplier: (id, input) => ipcRenderer.invoke(contactsChannels.updateSupplier, id, input),
+    deleteCustomer: (id) => ipcRenderer.invoke(contactsChannels.deleteCustomer, id),
   },
   dashboard: {
     getSummary: () => ipcRenderer.invoke(dashboardChannels.getSummary),
   },
   invoices: {
-    getBySaleId: (saleId) => ipcRenderer.invoke(invoiceChannels.getBySaleId, saleId),
-    getCustomerStatement: (customerId) => ipcRenderer.invoke(invoiceChannels.getCustomerStatement, customerId),
+    getBill: (saleId) => ipcRenderer.invoke(invoiceChannels.getBill, saleId),
     getFolder: () => ipcRenderer.invoke(invoiceChannels.getFolder),
     chooseFolder: () => ipcRenderer.invoke(invoiceChannels.chooseFolder),
     updateFolder: (folder) => ipcRenderer.invoke(invoiceChannels.updateFolder, folder),
@@ -38,43 +35,21 @@ const stylecraftApi: StyleCraftApi = {
   },
   ledger: {
     getSummary: () => ipcRenderer.invoke(ledgerChannels.getSummary),
-    getStatement: (partyType, partyId) => ipcRenderer.invoke(ledgerChannels.getStatement, partyType, partyId),
+    getStatement: (customerId, filters) => ipcRenderer.invoke(ledgerChannels.getStatement, customerId, filters),
+    nextReceiptNumber: () => ipcRenderer.invoke(ledgerChannels.nextReceiptNumber),
     recordPayment: (input) => ipcRenderer.invoke(ledgerChannels.recordPayment, input),
-    deletePayment: (id) => ipcRenderer.invoke(ledgerChannels.deletePayment, id),
-    listPaidInFullSales: () => ipcRenderer.invoke(ledgerChannels.listPaidInFullSales),
-    moveSalesToKhata: (saleIds, actorName) => ipcRenderer.invoke(ledgerChannels.moveSalesToKhata, saleIds, actorName),
-  },
-  products: {
-    list: (filters) => ipcRenderer.invoke(productChannels.list, filters),
-    get: (id) => ipcRenderer.invoke(productChannels.get, id),
-    create: (input) => ipcRenderer.invoke(productChannels.create, input),
-    update: (id, input) => ipcRenderer.invoke(productChannels.update, id, input),
-    markInactive: (id) => ipcRenderer.invoke(productChannels.markInactive, id),
-  },
-  purchases: {
-    list: () => ipcRenderer.invoke(purchaseChannels.list),
-    create: (input) => ipcRenderer.invoke(purchaseChannels.create, input),
-    listSuppliers: () => ipcRenderer.invoke(purchaseChannels.listSuppliers),
-    createSupplier: (input) => ipcRenderer.invoke(purchaseChannels.createSupplier, input),
+    deletePayment: (id, password, actorName) => ipcRenderer.invoke(ledgerChannels.deletePayment, id, password, actorName),
   },
   reports: {
     getReports: (filters) => ipcRenderer.invoke(reportsChannels.getReports, filters),
   },
-  returns: {
-    listSaleCandidates: () => ipcRenderer.invoke(returnsChannels.listSaleCandidates),
-    createSaleReturn: (input) => ipcRenderer.invoke(returnsChannels.createSaleReturn, input),
-    listSaleReturns: () => ipcRenderer.invoke(returnsChannels.listSaleReturns),
-    listPurchaseCandidates: () => ipcRenderer.invoke(returnsChannels.listPurchaseCandidates),
-    createPurchaseReturn: (input) => ipcRenderer.invoke(returnsChannels.createPurchaseReturn, input),
-    listPurchaseReturns: () => ipcRenderer.invoke(returnsChannels.listPurchaseReturns),
-  },
   sales: {
-    list: () => ipcRenderer.invoke(salesChannels.list),
+    list: (filters) => ipcRenderer.invoke(salesChannels.list, filters),
     get: (id) => ipcRenderer.invoke(salesChannels.get, id),
+    nextBillNumber: () => ipcRenderer.invoke(salesChannels.nextBillNumber),
     create: (input) => ipcRenderer.invoke(salesChannels.create, input),
     update: (id, input, password, actorName) => ipcRenderer.invoke(salesChannels.update, id, input, password, actorName),
-    listCustomers: () => ipcRenderer.invoke(salesChannels.listCustomers),
-    createCustomer: (input) => ipcRenderer.invoke(salesChannels.createCustomer, input),
+    delete: (id, password, actorName) => ipcRenderer.invoke(salesChannels.delete, id, password, actorName),
   },
   security: {
     getEditPasswordStatus: () => ipcRenderer.invoke(securityChannels.getEditPasswordStatus),
@@ -85,9 +60,6 @@ const stylecraftApi: StyleCraftApi = {
   settings: {
     getBusinessSettings: () => ipcRenderer.invoke(settingsChannels.getBusinessSettings),
     updateBusinessSettings: (input) => ipcRenderer.invoke(settingsChannels.updateBusinessSettings, input),
-  },
-  stock: {
-    adjust: (input) => ipcRenderer.invoke(stockChannels.adjust, input),
   },
   update: {
     check: () => ipcRenderer.invoke(updateChannels.check),

@@ -1,645 +1,500 @@
-import { useEffect, useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import InvoicePreview from "@/components/invoices/InvoicePreview";
-import { findVariant, VariantPicker } from "@/components/products/VariantPicker";
+import CustomerPicker from "@/components/contacts/CustomerPicker";
+import BillPreview from "@/components/invoices/BillPreview";
 import { Button } from "@/components/ui/button";
+import { compactInputClass, ErrorBanner, inputClass, labelClass, ScreenHeader, SuccessBanner } from "@/components/ui/form";
 import { formatCurrency } from "@/lib/currency";
-import type { CustomerDto, InvoiceDetailDto, ProductDto, SaleDetailDto, SaleHistoryDto, SaleInput } from "@/types/stylecraft-api";
+import { formatAmount, formatAmountOrBlank, formatDate, parseQuantity, parseRupeesToCents, toDayInputValue } from "@/lib/format";
+import { workAmountCents, workKinds, workLabels, type WorkKind } from "@/lib/job-math";
+import type { BillDocumentDto, ContactDto, SaleDetailDto, SaleHistoryDto, SaleJobInput } from "@/types/stylecraft-api";
 
-type ItemFormState = {
-  rowId: number;
-  productId: string;
-  variantId: string;
-  quantity: string;
-  unitPrice: string;
-  discount: string;
+type WorkForm = { qty: string; rate: string };
+type JobForm = { key: number; jobName: string } & Record<WorkKind, WorkForm>;
+
+type ParsedJob = {
+  input: SaleJobInput;
+  amounts: Record<WorkKind, number>;
+  totalCents: number;
+  error: string | null;
 };
 
-type SaleFormState = {
-  customerId: string;
-  customerName: string;
-  saleDate: string;
-  amountPaid: string;
-  paymentMethod: string;
-  notes: string;
-  items: ItemFormState[];
-};
-
-function todayInputValue() {
-  return new Date().toISOString().slice(0, 10);
+function emptyWork(): WorkForm {
+  return { qty: "", rate: "" };
 }
 
-function makeItem(rowId: number): ItemFormState {
-  return { rowId, productId: "", variantId: "", quantity: "1", unitPrice: "0.00", discount: "0.00" };
+function trimNumber(value: number) {
+  return value === 0 ? "" : String(value);
 }
 
-function makeEmptyForm(): SaleFormState {
-  return {
-    customerId: "",
-    customerName: "",
-    saleDate: todayInputValue(),
-    amountPaid: "",
-    paymentMethod: "",
-    notes: "",
-    items: [makeItem(1)],
-  };
-}
+/**
+ * Reads one job row. A rate typed with the quantity left empty counts as a
+ * quantity of 1, so a flat charge (cutting Rs 500) needs only the rate.
+ */
+function parseJob(job: JobForm, index: number): ParsedJob {
+  const label = job.jobName.trim() ? `"${job.jobName.trim()}"` : `Job ${index + 1}`;
+  let error: string | null = null;
+  const charges = {} as SaleJobInput;
+  const amounts = {} as Record<WorkKind, number>;
 
-function formatDate(value: Date) {
-  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date(value));
-}
+  for (const kind of workKinds) {
+    const rateCents = parseRupeesToCents(job[kind].rate);
+    let qty = parseQuantity(job[kind].qty);
 
-function decimalStringToCents(value: string) {
-  const amount = Number(value);
+    if (rateCents === null || rateCents < 0) {
+      error ??= `${label}: ${workLabels[kind]} rate is not a valid amount.`;
+    }
 
-  if (!Number.isFinite(amount)) {
-    return Number.NaN;
+    if (qty === null || qty < 0) {
+      error ??= `${label}: ${workLabels[kind]} quantity is not a valid number.`;
+    }
+
+    const safeRate = rateCents !== null && rateCents > 0 ? rateCents : 0;
+    qty = qty !== null && qty > 0 ? qty : 0;
+
+    if (qty === 0 && safeRate > 0 && job[kind].qty.trim() === "") {
+      qty = 1;
+    }
+
+    charges[kind] = { qty, rateCents: safeRate };
+    amounts[kind] = workAmountCents({ qty, rateCents: safeRate });
   }
 
-  return Math.round(amount * 100);
-}
+  const totalCents = workKinds.reduce((sum, kind) => sum + amounts[kind], 0);
 
-function lineTotalCents(item: ItemFormState) {
-  const quantity = Number(item.quantity);
-  const unitPriceCents = decimalStringToCents(item.unitPrice);
-  const discountAmountCents = decimalStringToCents(item.discount);
-
-  if (
-    !Number.isInteger(quantity) ||
-    quantity <= 0 ||
-    !Number.isFinite(unitPriceCents) ||
-    unitPriceCents < 0 ||
-    !Number.isFinite(discountAmountCents) ||
-    discountAmountCents < 0
-  ) {
-    return 0;
-  }
-
-  return Math.max(0, quantity * unitPriceCents - discountAmountCents);
-}
-
-function buildSaleInput(form: SaleFormState): { input?: SaleInput; error?: string } {
-  if (!form.saleDate) {
-    return { error: "Sale date is required." };
-  }
-
-  const seenVariantIds = new Set<number>();
-  const items = [];
-
-  for (const item of form.items) {
-    const variantId = Number(item.variantId);
-    const quantity = Number(item.quantity);
-    const unitPriceCents = decimalStringToCents(item.unitPrice);
-    const discountAmountCents = decimalStringToCents(item.discount);
-
-    if (!Number.isInteger(variantId) || variantId <= 0) {
-      return { error: "Select a size/colour for every sale item." };
-    }
-
-    if (!Number.isInteger(quantity) || quantity <= 0) {
-      return { error: "Quantity must be a positive whole number." };
-    }
-
-    if (!Number.isInteger(unitPriceCents) || unitPriceCents < 0) {
-      return { error: "Unit price must be a valid zero or positive amount." };
-    }
-
-    if (!Number.isInteger(discountAmountCents) || discountAmountCents < 0) {
-      return { error: "Discount must be a valid zero or positive amount." };
-    }
-
-    if (discountAmountCents > quantity * unitPriceCents) {
-      return { error: "Discount cannot exceed the line subtotal." };
-    }
-
-    if (seenVariantIds.has(variantId)) {
-      return { error: "Each size/colour can appear only once per sale." };
-    }
-
-    seenVariantIds.add(variantId);
-    items.push({ variantId, quantity, unitPriceCents, discountAmountCents });
-  }
-
-  const totalAmountCents = items.reduce((sum, item) => sum + Math.max(0, item.quantity * item.unitPriceCents - item.discountAmountCents), 0);
-  let amountPaidCents = 0;
-
-  if (form.amountPaid.trim()) {
-    amountPaidCents = decimalStringToCents(form.amountPaid);
-
-    if (!Number.isInteger(amountPaidCents) || amountPaidCents < 0) {
-      return { error: "Amount paid must be a valid zero or positive amount." };
-    }
-
-    if (amountPaidCents > totalAmountCents) {
-      return { error: "Amount paid cannot be more than the sale total." };
-    }
-  }
-
-  if (amountPaidCents < totalAmountCents && !form.customerId && !form.customerName.trim()) {
-    return {
-      error:
-        "An empty amount paid means nothing was paid, so this sale needs a khata. Choose or name a customer, or press “Paid in full” if the customer paid everything.",
-    };
-  }
-
-  return {
-    input: {
-      customerId: form.customerId ? Number(form.customerId) : null,
-      customerName: form.customerName.trim() || null,
-      saleDate: form.saleDate,
-      amountPaidCents,
-      paymentMethod: form.paymentMethod.trim() || null,
-      notes: form.notes.trim() || null,
-      items,
-    },
-  };
-}
-
-/** Turns a recorded sale back into editable form state. */
-function saleToForm(sale: SaleDetailDto, products: ProductDto[]): SaleFormState {
-  return {
-    customerId: sale.customerId === null ? "" : String(sale.customerId),
-    customerName: "",
-    saleDate: new Date(sale.saleDate).toISOString().slice(0, 10),
-    amountPaid: (sale.amountPaidCents / 100).toFixed(2),
-    paymentMethod: sale.paymentMethod ?? "",
-    notes: sale.notes ?? "",
-    items: sale.items.map((item, index) => {
-      const owner = item.variantId === null ? undefined : products.find((product) => product.variants.some((variant) => variant.id === item.variantId));
-
-      return {
-        rowId: index + 1,
-        productId: owner === undefined ? String(item.productId) : String(owner.id),
-        variantId: item.variantId === null ? "" : String(item.variantId),
-        quantity: String(item.quantity),
-        unitPrice: (item.unitPriceCents / 100).toFixed(2),
-        discount: (item.discountAmountCents / 100).toFixed(2),
-      };
-    }),
-  };
+  return { input: { ...charges, jobName: job.jobName.trim() }, amounts, totalCents, error };
 }
 
 export default function SalesScreen() {
-  const [products, setProducts] = useState<ProductDto[]>([]);
-  const [customers, setCustomers] = useState<CustomerDto[]>([]);
-  const [sales, setSales] = useState<SaleHistoryDto[]>([]);
-  const [form, setForm] = useState<SaleFormState>(() => makeEmptyForm());
-  const [nextRowId, setNextRowId] = useState(2);
-  const [selectedInvoice, setSelectedInvoice] = useState<InvoiceDetailDto | null>(null);
-  const [invoiceLoadingSaleId, setInvoiceLoadingSaleId] = useState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [editingSaleId, setEditingSaleId] = useState<number | null>(null);
-  const [editingInvoiceNumber, setEditingInvoiceNumber] = useState<string | null>(null);
-  const [editPasswordRequired, setEditPasswordRequired] = useState(false);
-  const [editPassword, setEditPassword] = useState("");
-  const [editActorName, setEditActorName] = useState("");
-  const [notice, setNotice] = useState<string | null>(null);
+  const nextKey = useRef(1);
+  const makeJob = useCallback((): JobForm => {
+    const key = nextKey.current;
+    nextKey.current += 1;
 
-  async function loadSalesScreen() {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const [loadedProducts, loadedCustomers, loadedSales] = await Promise.all([
-        window.stylecraft.products.list({ isActive: true }),
-        window.stylecraft.sales.listCustomers(),
-        window.stylecraft.sales.list(),
-      ]);
-
-      setProducts(loadedProducts);
-      setCustomers(loadedCustomers);
-      setSales(loadedSales);
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Could not load sales.");
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void loadSalesScreen();
+    return { key, jobName: "", rota: emptyWork(), gto: emptyWork(), cutting: emptyWork(), lamination: emptyWork(), dye: emptyWork() };
   }, []);
 
-  function updateItem(rowId: number, changes: Partial<ItemFormState>) {
-    setForm((current) => ({
-      ...current,
-      items: current.items.map((item) => (item.rowId === rowId ? { ...item, ...changes } : item)),
-    }));
+  const [customers, setCustomers] = useState<ContactDto[]>([]);
+  const [customerId, setCustomerId] = useState<number | null>(null);
+  const [saleDate, setSaleDate] = useState(() => toDayInputValue());
+  const [notes, setNotes] = useState("");
+  const [jobs, setJobs] = useState<JobForm[]>(() => [makeJob()]);
+  const [nextBillNumber, setNextBillNumber] = useState<number | null>(null);
+  const [editing, setEditing] = useState<{ sale: SaleDetailDto; password: string } | null>(null);
+
+  const [history, setHistory] = useState<SaleHistoryDto[]>([]);
+  const [filterCustomerId, setFilterCustomerId] = useState<number | null>(null);
+  const [filterStart, setFilterStart] = useState("");
+  const [filterEnd, setFilterEnd] = useState("");
+  const [search, setSearch] = useState("");
+
+  const [isPasswordSet, setIsPasswordSet] = useState(false);
+  const [pending, setPending] = useState<{ kind: "edit" | "delete"; sale: SaleHistoryDto } | null>(null);
+  const [pendingPassword, setPendingPassword] = useState("");
+
+  const [bill, setBill] = useState<BillDocumentDto | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const loadCustomers = useCallback(async () => {
+    setCustomers(await window.stylecraft.contacts.listCustomers());
+  }, []);
+
+  const loadHistory = useCallback(async () => {
+    setHistory(
+      await window.stylecraft.sales.list({
+        customerId: filterCustomerId,
+        startDate: filterStart || null,
+        endDate: filterEnd || null,
+        search: search || null,
+      }),
+    );
+  }, [filterCustomerId, filterStart, filterEnd, search]);
+
+  const refreshNumbers = useCallback(async () => {
+    setNextBillNumber(await window.stylecraft.sales.nextBillNumber());
+  }, []);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        await Promise.all([loadCustomers(), refreshNumbers()]);
+        setIsPasswordSet((await window.stylecraft.security.getEditPasswordStatus()).isSet);
+      } catch (caughtError) {
+        setError(caughtError instanceof Error ? caughtError.message : "Could not load sales.");
+      }
+    }
+
+    void load();
+  }, [loadCustomers, refreshNumbers]);
+
+  useEffect(() => {
+    loadHistory().catch((caughtError: unknown) => setError(caughtError instanceof Error ? caughtError.message : "Could not load bills."));
+  }, [loadHistory]);
+
+  const parsedJobs = useMemo(() => jobs.map((job, index) => parseJob(job, index)), [jobs]);
+  const billTotalCents = parsedJobs.reduce((sum, job) => sum + job.totalCents, 0);
+
+  function updateJob(key: number, change: (job: JobForm) => JobForm) {
+    setJobs((current) => current.map((job) => (job.key === key ? change(job) : job)));
   }
 
-  function selectProduct(rowId: number, productId: string) {
-    const product = products.find((entry) => String(entry.id) === productId);
-    const available = product?.variants.filter((variant) => variant.isActive) ?? [];
-
-    // A product with a single size needs no second choice.
-    const variantId = available.length === 1 ? String(available[0].id) : "";
-
-    updateItem(rowId, { productId, variantId, unitPrice: available.length === 1 ? (available[0].sellingPriceCents / 100).toFixed(2) : "0.00" });
+  function updateWork(key: number, kind: WorkKind, field: keyof WorkForm, value: string) {
+    updateJob(key, (job) => ({ ...job, [kind]: { ...job[kind], [field]: value } }));
   }
 
-  function selectVariant(rowId: number, variantId: string) {
-    const found = findVariant(products, Number(variantId));
-
-    updateItem(rowId, { variantId, unitPrice: found ? (found.variant.sellingPriceCents / 100).toFixed(2) : "0.00" });
+  function resetForm() {
+    setJobs([makeJob()]);
+    setNotes("");
+    setEditing(null);
+    setCustomerId(null);
+    setSaleDate(toDayInputValue());
   }
 
-  function addItem() {
-    setForm((current) => ({ ...current, items: [...current.items, makeItem(nextRowId)] }));
-    setNextRowId((current) => current + 1);
-  }
+  function loadSaleIntoForm(sale: SaleDetailDto) {
+    setCustomerId(sale.customerId);
+    setSaleDate(toDayInputValue(sale.saleDate));
+    setNotes(sale.notes ?? "");
+    setJobs(
+      sale.jobs.map((job) => {
+        const form = makeJob();
+        form.jobName = job.jobName;
 
-  function removeItem(rowId: number) {
-    setForm((current) => (current.items.length === 1 ? current : { ...current, items: current.items.filter((item) => item.rowId !== rowId) }));
+        for (const kind of workKinds) {
+          form[kind] = { qty: trimNumber(job[kind].qty), rate: job[kind].rateCents === 0 ? "" : String(job[kind].rateCents / 100) };
+        }
+
+        return form;
+      }),
+    );
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setMessage(null);
 
-    const { input, error: validationError } = buildSaleInput(form);
-
-    if (!input) {
-      setError(validationError ?? "Sale details are incomplete.");
+    if (customerId === null) {
+      setError("Select the customer this bill is for.");
       return;
     }
 
-    try {
-      if (editingSaleId === null) {
-        await window.stylecraft.sales.create(input);
-        setNotice("Sale saved.");
-      } else {
-        if (editPasswordRequired && !editPassword.trim()) {
-          setError("Enter the edit password to save changes to a recorded sale.");
-          return;
-        }
+    const firstError = parsedJobs.find((job) => job.error !== null)?.error;
 
-        await window.stylecraft.sales.update(editingSaleId, input, editPassword, editActorName.trim() || null);
-        setNotice(`Sale ${editingInvoiceNumber ?? ""} updated.`);
+    if (firstError) {
+      setError(firstError);
+      return;
+    }
+
+    const input = { customerId, saleDate, notes: notes || null, jobs: parsedJobs.map((job) => job.input) };
+    setIsSaving(true);
+
+    try {
+      const saved = editing
+        ? await window.stylecraft.sales.update(editing.sale.id, input, editing.password)
+        : await window.stylecraft.sales.create(input);
+
+      setMessage(editing ? `Bill No. ${saved.billNumber} updated.` : `Bill No. ${saved.billNumber} saved — ${formatCurrency(saved.totalAmountCents)} added to ${saved.customerName}'s khata.`);
+      resetForm();
+      setBill(null);
+      await Promise.all([loadHistory(), refreshNumbers()]);
+      setBill(await window.stylecraft.invoices.getBill(saved.id));
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Could not save the bill.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function openBill(saleId: number) {
+    setError(null);
+
+    try {
+      setBill(await window.stylecraft.invoices.getBill(saleId));
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Could not open the bill.");
+    }
+  }
+
+  async function startEdit(sale: SaleHistoryDto, password: string) {
+    const detail = await window.stylecraft.sales.get(sale.id);
+    loadSaleIntoForm(detail);
+    setEditing({ sale: detail, password });
+    setMessage(null);
+    window.scrollTo?.({ top: 0, behavior: "smooth" });
+  }
+
+  async function requestAction(kind: "edit" | "delete", sale: SaleHistoryDto) {
+    setError(null);
+    setMessage(null);
+
+    if (isPasswordSet) {
+      setPending({ kind, sale });
+      setPendingPassword("");
+      return;
+    }
+
+    await runAction(kind, sale, "");
+  }
+
+  async function runAction(kind: "edit" | "delete", sale: SaleHistoryDto, password: string) {
+    try {
+      if (isPasswordSet && !(await window.stylecraft.security.verifyEditPassword(password))) {
+        setError("Edit password is not correct.");
+        return;
       }
 
-      cancelSaleEdit();
-      await loadSalesScreen();
+      setPending(null);
+
+      if (kind === "edit") {
+        await startEdit(sale, password);
+        return;
+      }
+
+      if (!window.confirm(`Delete Bill No. ${sale.billNumber} (${sale.customerName}, ${formatCurrency(sale.totalAmountCents)})? It will be removed from the khata.`)) {
+        return;
+      }
+
+      await window.stylecraft.sales.delete(sale.id, password);
+      setMessage(`Bill No. ${sale.billNumber} deleted.`);
+
+      if (bill?.id === sale.id) {
+        setBill(null);
+      }
+
+      await Promise.all([loadHistory(), refreshNumbers()]);
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Could not save sale.");
+      setError(caughtError instanceof Error ? caughtError.message : "Could not complete that.");
     }
   }
 
-  /** Loads a recorded sale back into the form so its details can be corrected. */
-  async function startSaleEdit(saleId: number) {
-    setError(null);
-    setNotice(null);
-
-    try {
-      const [sale, passwordStatus] = await Promise.all([window.stylecraft.sales.get(saleId), window.stylecraft.security.getEditPasswordStatus()]);
-
-      setEditingSaleId(sale.id);
-      setEditingInvoiceNumber(sale.invoiceNumber);
-      setEditPasswordRequired(passwordStatus.isSet);
-      setEditPassword("");
-      setForm(saleToForm(sale, products));
-      setNextRowId(sale.items.length + 1);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Could not open the sale for editing.");
-    }
-  }
-
-  function cancelSaleEdit() {
-    setForm(makeEmptyForm());
-    setNextRowId(2);
-    setEditingSaleId(null);
-    setEditingInvoiceNumber(null);
-    setEditPassword("");
-    setEditPasswordRequired(false);
-  }
-
-  async function handleViewInvoice(saleId: number) {
-    setError(null);
-    setInvoiceLoadingSaleId(saleId);
-
-    try {
-      setSelectedInvoice(await window.stylecraft.invoices.getBySaleId(saleId));
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Could not load invoice.");
-    } finally {
-      setInvoiceLoadingSaleId(null);
-    }
-  }
-
-  const totalCents = form.items.reduce((sum, item) => sum + lineTotalCents(item), 0);
-  const paidNowCents = form.amountPaid.trim() ? decimalStringToCents(form.amountPaid) : 0;
-  const balanceDueCents = Number.isFinite(paidNowCents) ? Math.max(totalCents - paidNowCents, 0) : totalCents;
+  const historyTotalCents = history.reduce((sum, sale) => sum + sale.totalAmountCents, 0);
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Milestone 5 sales module</p>
-          <h2 className="mt-1 text-3xl font-bold tracking-tight">Sales</h2>
-          <p className="mt-2 max-w-2xl text-slate-600 dark:text-slate-300">Record sales, block overselling, calculate profit, decrease stock, and produce readable invoices.</p>
-        </div>
-        <div className="rounded-2xl bg-blue-50 dark:bg-blue-950/40 px-4 py-3 text-sm text-blue-700">
-          <span className="font-semibold">{sales.length}</span> sales in history
-        </div>
-      </div>
+      <ScreenHeader kicker="Sales" title={editing ? `Edit Bill No. ${editing.sale.billNumber}` : "New bill"}>
+        Enter each job on its own line. Every kind of work is quantity × rate; leave the quantity empty for a flat charge and it counts as 1. The bill total goes
+        straight onto the customer's khata.
+      </ScreenHeader>
 
-      {error ? (
-        <div className="rounded-2xl border border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-950/30 px-4 py-3 text-sm font-medium text-red-700 dark:text-red-300" role="alert">
-          {error}
-        </div>
-      ) : null}
+      {error ? <ErrorBanner>{error}</ErrorBanner> : null}
+      {message ? <SuccessBanner>{message}</SuccessBanner> : null}
 
-      {notice ? (
-        <div className="rounded-2xl border border-green-200 dark:border-green-800/60 bg-green-50 dark:bg-green-950/30 px-4 py-3 text-sm font-medium text-green-800 dark:text-green-200" role="status">
-          {notice}
-        </div>
-      ) : null}
-
-      <form className="grid gap-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4" noValidate onSubmit={handleSubmit}>
-        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h3 className="font-semibold text-slate-950 dark:text-slate-50">{editingSaleId === null ? "Create sale" : `Edit sale ${editingInvoiceNumber ?? ""}`}</h3>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              {editingSaleId === null
-                ? "Each saved item decreases stock and records a stock movement."
-                : "Saving puts the original stock back and applies these lines instead."}
-            </p>
-          </div>
-          <div className="rounded-xl bg-white dark:bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-950 dark:text-slate-50 shadow-sm">Total {formatCurrency(totalCents)}</div>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-4">
-          <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="sale-customer">
-            Customer
-            <select
-              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              id="sale-customer"
-              onChange={(event) => setForm((current) => ({ ...current, customerId: event.target.value }))}
-              value={form.customerId}
-            >
-              <option value="">No existing customer</option>
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="sale-new-customer">
-            New customer name
-            <input
-              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              id="sale-new-customer"
-              onChange={(event) => setForm((current) => ({ ...current, customerName: event.target.value }))}
-              placeholder="Optional"
-              value={form.customerName}
-            />
-          </label>
-
-          <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="sale-date">
-            Sale date
-            <input
-              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              id="sale-date"
-              onChange={(event) => setForm((current) => ({ ...current, saleDate: event.target.value }))}
-              type="date"
-              value={form.saleDate}
-            />
-          </label>
-
-          <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="sale-payment-method">
-            Payment method
-            <input
-              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              id="sale-payment-method"
-              onChange={(event) => setForm((current) => ({ ...current, paymentMethod: event.target.value }))}
-              placeholder="Optional"
-              value={form.paymentMethod}
-            />
-          </label>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200">
-            <label htmlFor="sale-amount-paid">Amount paid now</label>
-            <div className="flex gap-2">
-              <input
-                className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/50"
-                id="sale-amount-paid"
-                min="0"
-                onChange={(event) => setForm((current) => ({ ...current, amountPaid: event.target.value }))}
-                placeholder="Leave blank if nothing was paid"
-                step="0.01"
-                type="number"
-                value={form.amountPaid}
-              />
-              <Button
-                className="shrink-0 border border-slate-300 dark:border-slate-600"
-                onClick={() => setForm((current) => ({ ...current, amountPaid: (totalCents / 100).toFixed(2) }))}
-                type="button"
-                variant="ghost"
-              >
-                Paid in full
-              </Button>
+      <form className="space-y-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4" noValidate onSubmit={handleSubmit}>
+        <div className="grid gap-4 md:grid-cols-[140px_180px_1fr]">
+          <div className={labelClass}>
+            Bill No.
+            <div className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 px-3 py-2 font-semibold text-slate-950 dark:text-slate-50">
+              {editing ? editing.sale.billNumber : (nextBillNumber ?? "-")}
             </div>
-            <span className={`text-xs font-normal ${balanceDueCents > 0 ? "text-amber-600 dark:text-amber-400" : "text-slate-500 dark:text-slate-400"}`}>
-              {balanceDueCents > 0
-                ? `Goes on the customer's khata: ${formatCurrency(balanceDueCents)}`
-                : "Paid in full — nothing will be left owing."}
-            </span>
           </div>
-        </div>
-
-        {editingSaleId !== null ? (
-          <div className="grid gap-4 rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 p-4 md:grid-cols-2">
-            <div className="md:col-span-2 text-sm text-slate-700 dark:text-slate-200">
-              {editPasswordRequired
-                ? "Editing a recorded sale needs the edit password set in Settings."
-                : "No edit password is set. Anyone using this computer can change a recorded sale — set one in Settings."}
-            </div>
-            {editPasswordRequired ? (
-              <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="sale-edit-password">
-                Edit password
-                <input
-                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/50"
-                  id="sale-edit-password"
-                  onChange={(event) => setEditPassword(event.target.value)}
-                  type="password"
-                  value={editPassword}
-                />
-              </label>
-            ) : null}
-            <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="sale-edit-actor">
-              Edited by
-              <input
-                className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/50"
-                id="sale-edit-actor"
-                onChange={(event) => setEditActorName(event.target.value)}
-                placeholder="Optional, saved in the audit log"
-                value={editActorName}
-              />
-            </label>
-          </div>
-        ) : null}
-
-        <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="sale-notes">
-          Notes
-          <textarea
-            className="min-h-20 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-            id="sale-notes"
-            onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
-            value={form.notes}
+          <label className={labelClass} htmlFor="sale-date">
+            Date
+            <input className={inputClass} id="sale-date" onChange={(event) => setSaleDate(event.target.value)} type="date" value={saleDate} />
+          </label>
+          <CustomerPicker
+            customers={customers}
+            id="sale-customer"
+            onChange={setCustomerId}
+            onCustomerCreated={() => void loadCustomers()}
+            value={customerId}
           />
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-100 dark:bg-slate-800 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <tr>
+                <th className="w-8 px-2 py-2 text-left font-semibold">#</th>
+                <th className="min-w-[170px] px-2 py-2 text-left font-semibold">Job name</th>
+                {workKinds.map((kind) => (
+                  <th className="w-[92px] px-1 py-2 text-center font-semibold" key={kind}>
+                    {workLabels[kind]}
+                    <div className="text-[10px] font-normal normal-case tracking-normal">qty / rate</div>
+                  </th>
+                ))}
+                <th className="w-[100px] px-2 py-2 text-right font-semibold">Grand Total</th>
+                <th className="w-10 px-1 py-2" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {jobs.map((job, index) => {
+                const parsed = parsedJobs[index];
+
+                return (
+                  <tr key={job.key}>
+                    <td className="px-2 py-2 align-top text-slate-500 dark:text-slate-400">{index + 1}</td>
+                    <td className="px-2 py-2 align-top">
+                      <input
+                        aria-label={`Job ${index + 1} name`}
+                        className={`${compactInputClass} text-left`}
+                        onChange={(event) => updateJob(job.key, (current) => ({ ...current, jobName: event.target.value }))}
+                        placeholder="e.g. Visiting cards"
+                        value={job.jobName}
+                      />
+                    </td>
+                    {workKinds.map((kind) => (
+                      <td className="px-1 py-2 align-top" key={kind}>
+                        <div className="grid gap-1">
+                          <input
+                            aria-label={`Job ${index + 1} ${workLabels[kind]} quantity`}
+                            className={compactInputClass}
+                            inputMode="decimal"
+                            onChange={(event) => updateWork(job.key, kind, "qty", event.target.value)}
+                            placeholder="Qty"
+                            value={job[kind].qty}
+                          />
+                          <input
+                            aria-label={`Job ${index + 1} ${workLabels[kind]} rate`}
+                            className={compactInputClass}
+                            inputMode="decimal"
+                            onChange={(event) => updateWork(job.key, kind, "rate", event.target.value)}
+                            placeholder="Rate"
+                            value={job[kind].rate}
+                          />
+                          <div className="min-h-4 text-right text-xs text-slate-500 dark:text-slate-400">{formatAmountOrBlank(parsed.amounts[kind])}</div>
+                        </div>
+                      </td>
+                    ))}
+                    <td className="px-2 py-2 text-right align-top font-semibold text-slate-950 dark:text-slate-50" data-testid={`job-${index + 1}-total`}>
+                      {formatAmount(parsed.totalCents)}
+                    </td>
+                    <td className="px-1 py-2 align-top">
+                      <Button
+                        aria-label={`Remove job ${index + 1}`}
+                        disabled={jobs.length === 1}
+                        onClick={() => setJobs((current) => current.filter((entry) => entry.key !== job.key))}
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <Button className="gap-2" onClick={() => setJobs((current) => [...current, makeJob()])} type="button" variant="ghost">
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Add another job
+          </Button>
+          <div className="rounded-2xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-5 py-3 text-right">
+            <div className="text-sm text-slate-500 dark:text-slate-400">Bill total</div>
+            <div className="text-2xl font-bold text-slate-950 dark:text-slate-50" data-testid="bill-total">
+              {formatCurrency(billTotalCents)}
+            </div>
+          </div>
+        </div>
+
+        <label className={labelClass} htmlFor="sale-notes">
+          Notes
+          <input className={inputClass} id="sale-notes" onChange={(event) => setNotes(event.target.value)} placeholder="Optional" value={notes} />
         </label>
 
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <h4 className="font-semibold text-slate-950 dark:text-slate-50">Items</h4>
-            <Button onClick={addItem} type="button" variant="ghost">
-              Add item
-            </Button>
-          </div>
-
-          {form.items.map((item, index) => (
-            <div
-              className="grid gap-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_100px_120px_120px_110px_auto]"
-              key={item.rowId}
-            >
-              <VariantPicker
-                idPrefix={`sale-${item.rowId}`}
-                label={`Product ${index + 1}`}
-                onProductChange={(productId) => selectProduct(item.rowId, productId)}
-                onVariantChange={(variantId) => selectVariant(item.rowId, variantId)}
-                productId={item.productId}
-                products={products}
-                variantId={item.variantId}
-              />
-
-              <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor={`sale-quantity-${item.rowId}`}>
-                Quantity
-                <input
-                  className="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  id={`sale-quantity-${item.rowId}`}
-                  min="1"
-                  onChange={(event) => updateItem(item.rowId, { quantity: event.target.value })}
-                  step="1"
-                  type="number"
-                  value={item.quantity}
-                />
-              </label>
-
-              <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor={`sale-unit-price-${item.rowId}`}>
-                Unit price
-                <input
-                  className="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  id={`sale-unit-price-${item.rowId}`}
-                  min="0"
-                  onChange={(event) => updateItem(item.rowId, { unitPrice: event.target.value })}
-                  step="0.01"
-                  type="number"
-                  value={item.unitPrice}
-                />
-              </label>
-
-              <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor={`sale-discount-${item.rowId}`}>
-                Discount
-                <input
-                  className="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  id={`sale-discount-${item.rowId}`}
-                  min="0"
-                  onChange={(event) => updateItem(item.rowId, { discount: event.target.value })}
-                  step="0.01"
-                  type="number"
-                  value={item.discount}
-                />
-              </label>
-
-              <div className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200">
-                Line total
-                <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-slate-950 dark:text-slate-50">{formatCurrency(lineTotalCents(item))}</div>
-              </div>
-
-              <div className="flex items-end">
-                {form.items.length > 1 ? (
-                  <Button onClick={() => removeItem(item.rowId)} type="button" variant="ghost">
-                    Remove
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-          ))}
-        </div>
-
         <div className="flex flex-wrap gap-2">
-          <Button disabled={isLoading || products.length === 0} type="submit">
-            {editingSaleId === null ? "Save sale" : "Save changes"}
+          <Button disabled={isSaving} type="submit">
+            {isSaving ? "Saving..." : editing ? "Save changes" : "Save bill"}
           </Button>
-          {editingSaleId !== null ? (
-            <Button onClick={cancelSaleEdit} type="button" variant="ghost">
-              Cancel edit
-            </Button>
-          ) : null}
+          <Button onClick={resetForm} type="button" variant="ghost">
+            {editing ? "Cancel edit" : "Clear"}
+          </Button>
         </div>
       </form>
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
-        <div className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
-          <h3 className="font-semibold text-slate-950 dark:text-slate-50">Sale history</h3>
+      {bill ? <BillPreview bill={bill} onClose={() => setBill(null)} /> : null}
+
+      {pending ? (
+        <div className="flex flex-col gap-3 rounded-2xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-4 md:flex-row md:items-end">
+          <label className={`${labelClass} flex-1`} htmlFor="sale-edit-password">
+            Edit password needed to {pending.kind} Bill No. {pending.sale.billNumber}
+            <input
+              autoFocus
+              className={inputClass}
+              id="sale-edit-password"
+              onChange={(event) => setPendingPassword(event.target.value)}
+              type="password"
+              value={pendingPassword}
+            />
+          </label>
+          <div className="flex gap-2">
+            <Button onClick={() => void runAction(pending.kind, pending.sale, pendingPassword)} type="button">
+              Continue
+            </Button>
+            <Button onClick={() => setPending(null)} type="button" variant="ghost">
+              Cancel
+            </Button>
+          </div>
         </div>
-        <div className="overflow-x-auto">
+      ) : null}
+
+      <section className="space-y-3">
+        <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+          <h3 className="text-xl font-semibold text-slate-950 dark:text-slate-50">Bill history</h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {history.length} bills · {formatCurrency(historyTotalCents)}
+          </p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-4">
+          <CustomerPicker allowAll customers={customers} id="sale-filter-customer" label="Customer" onChange={setFilterCustomerId} value={filterCustomerId} />
+          <label className={labelClass} htmlFor="sale-filter-start">
+            From
+            <input className={inputClass} id="sale-filter-start" onChange={(event) => setFilterStart(event.target.value)} type="date" value={filterStart} />
+          </label>
+          <label className={labelClass} htmlFor="sale-filter-end">
+            To
+            <input className={inputClass} id="sale-filter-end" onChange={(event) => setFilterEnd(event.target.value)} type="date" value={filterEnd} />
+          </label>
+          <label className={labelClass} htmlFor="sale-filter-search">
+            Search
+            <input className={inputClass} id="sale-filter-search" onChange={(event) => setSearch(event.target.value)} placeholder="Bill no., customer or job" value={search} />
+          </label>
+        </div>
+
+        <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
           <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700 text-left text-sm">
             <thead className="bg-slate-50 dark:bg-slate-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
               <tr>
-                <th className="px-4 py-3 font-semibold">Invoice</th>
-                <th className="px-4 py-3 font-semibold">Date</th>
-                <th className="px-4 py-3 font-semibold">Customer</th>
-                <th className="px-4 py-3 font-semibold">Items</th>
-                <th className="px-4 py-3 font-semibold">Total</th>
-                <th className="px-4 py-3 font-semibold">Paid</th>
-                <th className="px-4 py-3 font-semibold">Balance</th>
-                <th className="px-4 py-3 font-semibold">Profit</th>
-                <th className="px-4 py-3 font-semibold">Payment</th>
-                <th className="px-4 py-3 font-semibold">Notes</th>
-                <th className="px-4 py-3 font-semibold">Invoice</th>
+                <th className="px-3 py-3 font-semibold">Bill No.</th>
+                <th className="px-3 py-3 font-semibold">Date</th>
+                <th className="px-3 py-3 font-semibold">Customer</th>
+                <th className="px-3 py-3 font-semibold">Jobs</th>
+                <th className="px-3 py-3 text-right font-semibold">Total</th>
+                <th className="px-3 py-3 font-semibold" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
-              {isLoading ? (
+              {history.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={11}>
-                    Loading sales...
-                  </td>
-                </tr>
-              ) : sales.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={11}>
-                    No sales recorded yet.
+                  <td className="px-3 py-5 text-slate-500 dark:text-slate-400" colSpan={6}>
+                    No bills yet.
                   </td>
                 </tr>
               ) : (
-                sales.map((sale) => (
+                history.map((sale) => (
                   <tr key={sale.id}>
-                    <td className="px-4 py-4 font-medium text-slate-950 dark:text-slate-50">{sale.invoiceNumber}</td>
-                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{formatDate(sale.saleDate)}</td>
-                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{sale.customerName ?? "No customer"}</td>
-                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{sale.itemCount}</td>
-                    <td className="px-4 py-4 font-semibold text-slate-950 dark:text-slate-50">{formatCurrency(sale.totalAmountCents)}</td>
-                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{formatCurrency(sale.amountPaidCents)}</td>
-                    <td className={`px-4 py-4 font-medium ${sale.balanceDueCents > 0 ? "text-red-600 dark:text-red-400" : "text-slate-600 dark:text-slate-300"}`}>
-                      {formatCurrency(sale.balanceDueCents)}
-                    </td>
-                    <td className="px-4 py-4 font-semibold text-slate-950 dark:text-slate-50">{formatCurrency(sale.profitAmountCents)}</td>
-                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{sale.paymentMethod ?? "-"}</td>
-                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{sale.notes ?? "-"}</td>
-                    <td className="px-4 py-4">
-                      <div className="flex flex-wrap gap-2">
-                        <Button disabled={invoiceLoadingSaleId === sale.id} onClick={() => handleViewInvoice(sale.id)} size="sm" type="button" variant="ghost">
-                          {invoiceLoadingSaleId === sale.id ? "Loading..." : "View invoice"}
+                    <td className="px-3 py-3 font-semibold text-slate-950 dark:text-slate-50">{sale.billNumber}</td>
+                    <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{formatDate(sale.saleDate)}</td>
+                    <td className="px-3 py-3 text-slate-950 dark:text-slate-50">{sale.customerName}</td>
+                    <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{sale.jobNames.join(", ")}</td>
+                    <td className="px-3 py-3 text-right font-semibold text-slate-950 dark:text-slate-50">{formatCurrency(sale.totalAmountCents)}</td>
+                    <td className="px-3 py-3">
+                      <div className="flex justify-end gap-1">
+                        <Button onClick={() => void openBill(sale.id)} size="sm" type="button" variant="ghost">
+                          View / Print
                         </Button>
-                        <Button onClick={() => void startSaleEdit(sale.id)} size="sm" type="button" variant="ghost">
+                        <Button onClick={() => void requestAction("edit", sale)} size="sm" type="button" variant="ghost">
                           Edit
+                        </Button>
+                        <Button onClick={() => void requestAction("delete", sale)} size="sm" type="button" variant="ghost">
+                          Delete
                         </Button>
                       </div>
                     </td>
@@ -649,9 +504,7 @@ export default function SalesScreen() {
             </tbody>
           </table>
         </div>
-      </div>
-
-      {selectedInvoice === null ? null : <InvoicePreview invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} />}
+      </section>
     </div>
   );
 }

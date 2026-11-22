@@ -10,6 +10,7 @@ export type SavePdfInput = {
   html: string;
   fileName: string;
   saveAs?: boolean;
+  landscape?: boolean;
 };
 
 export type SavePdfResultDto = {
@@ -22,16 +23,10 @@ function defaultInvoiceFolder() {
 }
 
 export function registerInvoiceHandlers(ipcMain: IpcMain) {
-  ipcMain.handle(invoiceChannels.getBySaleId, async (_event, saleId: number) => {
-    const [{ getDatabasePath }, { getInvoiceBySaleId }] = await Promise.all([import("../db/paths.js"), import("../db/invoices-service.js")]);
+  ipcMain.handle(invoiceChannels.getBill, async (_event, saleId: number) => {
+    const [{ getDatabasePath }, { getBill }] = await Promise.all([import("../db/paths.js"), import("../db/invoices-service.js")]);
 
-    return getInvoiceBySaleId(getDatabasePath(), saleId);
-  });
-
-  ipcMain.handle(invoiceChannels.getCustomerStatement, async (_event, customerId: number) => {
-    const [{ getDatabasePath }, { getCustomerStatement }] = await Promise.all([import("../db/paths.js"), import("../db/invoices-service.js")]);
-
-    return getCustomerStatement(getDatabasePath(), customerId);
+    return getBill(getDatabasePath(), saleId);
   });
 
   ipcMain.handle(invoiceChannels.getFolder, async () => {
@@ -69,13 +64,13 @@ export function registerInvoiceHandlers(ipcMain: IpcMain) {
         return { filePath: null, folder };
       }
 
-      fs.writeFileSync(result.filePath, await renderHtmlToPdf(input.html));
+      fs.writeFileSync(result.filePath, await renderHtmlToPdf(input.html, { landscape: input.landscape === true }));
 
       return { filePath: result.filePath, folder };
     }
 
     const filePath = uniqueFilePath(folder, fileName);
-    fs.writeFileSync(filePath, await renderHtmlToPdf(input.html));
+    fs.writeFileSync(filePath, await renderHtmlToPdf(input.html, { landscape: input.landscape === true }));
 
     return { filePath, folder };
   });

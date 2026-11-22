@@ -4,12 +4,10 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createDb } from "./client";
-import { getCustomerStatement, getInvoiceBySaleId, getInvoiceFolder, invoiceFileName, InvoiceValidationError, updateInvoiceFolder } from "./invoices-service";
-import { createCustomer as createContactCustomer } from "./contacts-service";
-import { recordPayment } from "./ledger-service";
+import { createCustomer } from "./contacts-service";
+import { getBill, getInvoiceFolder, invoiceFileName, InvoiceValidationError, updateInvoiceFolder } from "./invoices-service";
 import { runMigrations } from "./migrate";
-import { createProduct, type ProductInput } from "./products-service";
-import { createCustomer, createSale, type SaleInput } from "./sales-service";
+import { createSale } from "./sales-service";
 import { settings } from "./schema";
 
 const tempDirs: string[] = [];
@@ -21,182 +19,68 @@ afterEach(() => {
 });
 
 function makeTempDatabasePath() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stylecraft-invoices-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "islamia-invoices-"));
   tempDirs.push(dir);
   const databasePath = path.join(dir, "test.sqlite");
   runMigrations(databasePath);
   return databasePath;
 }
 
-function makeProductInput(overrides: Partial<ProductInput> = {}): ProductInput {
-  return {
-    name: "Oxford Shirt",
-    sku: "OX-001",
-    categoryName: "Shirts",
-    purchasePriceCents: 1_250,
-    sellingPriceCents: 2_499,
-    currentStock: 5,
-    lowStockThreshold: 2,
-    isActive: true,
-    ...overrides,
-  };
-}
+const none = { qty: 0, rateCents: 0 };
 
-function makeSaleInput(overrides: Partial<SaleInput> = {}): SaleInput {
-  return {
-    saleDate: new Date("2026-07-09T00:00:00.000Z"),
-    paymentMethod: "Cash",
-    notes: "Counter sale",
-    items: [],
-    ...overrides,
-  };
-}
-
-function upsertSetting(databasePath: string, key: string, value: string) {
-  const { sqlite, db } = createDb(databasePath);
-
-  try {
-    db.insert(settings)
-      .values({ key, value })
-      .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: new Date() } })
-      .run();
-  } finally {
-    sqlite.close();
-  }
-}
-
-describe("invoice service", () => {
-  it("returns a sale invoice with business settings, customer details, line items, and persisted totals", () => {
+describe("bill document", () => {
+  it("returns a bill with business settings, customer details and every job", () => {
     const databasePath = makeTempDatabasePath();
-    const product = createProduct(databasePath, makeProductInput());
-    const customer = createCustomer(databasePath, {
-      name: "Jane Buyer",
-      phone: "555-0102",
-      email: "jane@example.com",
-      address: "12 Market Street",
+    const { sqlite, db } = createDb(databasePath);
+    db.insert(settings)
+      .values([
+        { key: "business.name", value: "Islamia Printers" },
+        { key: "business.phone", value: "0300-0000000" },
+        { key: "business.address", value: "Press Market, Faisalabad" },
+        { key: "currency.symbol", value: "Rs." },
+      ])
+      .run();
+    sqlite.close();
+
+    const customer = createCustomer(databasePath, { name: "Al Noor", phone: "0321-1111111", address: "Jhang Bazar" });
+    const sale = createSale(databasePath, {
+      customerId: customer.id,
+      saleDate: "2026-11-10",
+      notes: "Deliver Friday",
+      jobs: [{ jobName: "Cards", rota: { qty: 1000, rateCents: 200 }, gto: none, cutting: { qty: 1, rateCents: 5_000 }, lamination: none, dye: none }],
     });
 
-    upsertSetting(databasePath, "business.name", "StyleCraft Studio");
-    upsertSetting(databasePath, "business.phone", "555-0100");
-    upsertSetting(databasePath, "business.email", "hello@stylecraft.test");
-    upsertSetting(databasePath, "business.address", "1 Main Street");
-    upsertSetting(databasePath, "currency.symbol", "Rs. ");
-    upsertSetting(databasePath, "invoice.prefix", "SC");
+    const bill = getBill(databasePath, sale.id);
 
-    const sale = createSale(
-      databasePath,
-      makeSaleInput({ customerId: customer.id, items: [{ variantId: product.variants[0].id, quantity: 2, unitPriceCents: 2_500, discountAmountCents: 500 }] }),
-    );
-
-    const invoice = getInvoiceBySaleId(databasePath, sale.id);
-
-    expect(invoice).toMatchObject({
-      saleId: sale.id,
-      invoiceNumber: "INV-000001",
-      customerName: "Jane Buyer",
-      customerPhone: "555-0102",
-      customerEmail: "jane@example.com",
-      customerAddress: "12 Market Street",
-      subtotalCents: 5_000,
-      discountAmountCents: 500,
-      totalAmountCents: 4_500,
-      paymentMethod: "Cash",
-      notes: "Counter sale",
-      business: {
-        businessName: "StyleCraft Studio",
-        phone: "555-0100",
-        email: "hello@stylecraft.test",
-        address: "1 Main Street",
-        currencySymbol: "Rs.",
-        invoicePrefix: "SC",
-      },
-      items: [
-        {
-          productId: product.id,
-          productName: "Oxford Shirt",
-          productSku: "OX-001",
-          quantity: 2,
-          unitPriceCents: 2_500,
-          discountAmountCents: 500,
-          totalAmountCents: 4_500,
-        },
-      ],
+    expect(bill).toMatchObject({
+      billNumber: 1,
+      customerName: "Al Noor",
+      customerPhone: "0321-1111111",
+      customerAddress: "Jhang Bazar",
+      totalAmountCents: 205_000,
+      notes: "Deliver Friday",
+      business: { businessName: "Islamia Printers", phone: "0300-0000000", address: "Press Market, Faisalabad", currencySymbol: "Rs." },
     });
+    expect(bill.jobs[0]).toMatchObject({ jobName: "Cards", rota: { amountCents: 200_000 }, cutting: { amountCents: 5_000 } });
   });
 
   it("uses safe business defaults when settings are absent", () => {
     const databasePath = makeTempDatabasePath();
-    const product = createProduct(databasePath, makeProductInput({ sku: "DEFAULTS" }));
-    const sale = createSale(databasePath, makeSaleInput({ items: [{ variantId: product.variants[0].id, quantity: 1, unitPriceCents: 2_499 }] }));
-
-    expect(getInvoiceBySaleId(databasePath, sale.id).business).toEqual({
-      businessName: "Islamia Printers",
-      phone: null,
-      email: null,
-      address: null,
-      currencySymbol: "Rs.",
-      invoicePrefix: "INV",
-    });
-  });
-
-  it("rejects invalid or missing sale IDs", () => {
-    const databasePath = makeTempDatabasePath();
-
-    expect(() => getInvoiceBySaleId(databasePath, 0)).toThrow(InvoiceValidationError);
-    expect(() => getInvoiceBySaleId(databasePath, 999)).toThrow(InvoiceValidationError);
-  });
-});
-
-describe("customer statement", () => {
-  it("shows every invoice with its own line items, and the running balance beside them", () => {
-    const databasePath = makeTempDatabasePath();
-    const product = createProduct(databasePath, makeProductInput({ sku: "STMT-1" }));
-    const customer = createCustomer(databasePath, { name: "Jane Buyer", phone: "555-0102" });
-
-    const sale = createSale(
-      databasePath,
-      makeSaleInput({
-        customerId: customer.id,
-        amountPaidCents: 0,
-        items: [{ variantId: product.variants[0].id, quantity: 3, unitPriceCents: 2_000, discountAmountCents: 500 }],
-      }),
-    );
-
-    recordPayment(databasePath, { partyType: "customer", partyId: customer.id, amountCents: 1_500, paymentDate: new Date("2026-07-10T00:00:00.000Z") });
-
-    const statement = getCustomerStatement(databasePath, customer.id);
-
-    expect(statement).toMatchObject({
+    const customer = createCustomer(databasePath, { name: "Ali" });
+    const sale = createSale(databasePath, {
       customerId: customer.id,
-      customerName: "Jane Buyer",
-      customerPhone: "555-0102",
-      invoicedCents: 5_500,
-      paidCents: 1_500,
-      balanceCents: 4_000,
+      saleDate: "2026-11-10",
+      jobs: [{ jobName: "Cards", rota: { qty: 1, rateCents: 100 }, gto: none, cutting: none, lamination: none, dye: none }],
     });
 
-    const saleEntry = statement.entries.find((entry) => entry.kind === "sale");
-    expect(saleEntry?.sale).toMatchObject({ saleId: sale.id, invoiceNumber: "INV-000001", totalAmountCents: 5_500 });
-    expect(saleEntry?.sale?.items).toMatchObject([{ productName: "Oxford Shirt", quantity: 3, unitPriceCents: 2_000, totalAmountCents: 5_500 }]);
-    expect(statement.entries.find((entry) => entry.kind === "payment")?.sale).toBeNull();
+    expect(getBill(databasePath, sale.id).business).toEqual({ businessName: "Islamia Printers", phone: null, email: null, address: null, currencySymbol: "Rs." });
   });
 
-  it("starts the statement with old udhaar carried over as an opening balance", () => {
-    const databasePath = makeTempDatabasePath();
-    const customer = createContactCustomer(databasePath, { name: "Kamran", openingBalanceCents: 30_000 });
-
-    const statement = getCustomerStatement(databasePath, customer.id);
-
-    expect(statement.openingBalanceCents).toBe(30_000);
-    expect(statement.balanceCents).toBe(30_000);
-    expect(statement.entries[0]).toMatchObject({ kind: "opening", debitCents: 30_000, sale: null });
-  });
-
-  it("rejects invalid or missing customer IDs", () => {
+  it("rejects invalid or missing bill IDs", () => {
     const databasePath = makeTempDatabasePath();
 
-    expect(() => getCustomerStatement(databasePath, 0)).toThrow(InvoiceValidationError);
-    expect(() => getCustomerStatement(databasePath, 999)).toThrow(Error);
+    expect(() => getBill(databasePath, 0)).toThrow(InvoiceValidationError);
+    expect(() => getBill(databasePath, 999)).toThrow("Bill was not found.");
   });
 });
 
@@ -226,8 +110,8 @@ describe("invoice folder", () => {
 
 describe("invoice file names", () => {
   it("keeps a saved file name readable and safe on Windows", () => {
-    expect(invoiceFileName(["INV-000001", "Jane Buyer"])).toBe("INV-000001 - Jane Buyer.pdf");
-    expect(invoiceFileName(["Statement: Ali/Ahmed"])).toBe("Statement- Ali-Ahmed.pdf");
+    expect(invoiceFileName(["Bill 1", "Jane Buyer"])).toBe("Bill 1 - Jane Buyer.pdf");
+    expect(invoiceFileName(["Ledger: Ali/Ahmed"])).toBe("Ledger- Ali-Ahmed.pdf");
     expect(invoiceFileName([" ", null])).toBe("Invoice.pdf");
   });
 });

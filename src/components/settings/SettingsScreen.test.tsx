@@ -6,7 +6,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import SettingsScreen from "./SettingsScreen";
-import type { BackupApi, DashboardApi, InvoiceApi, ProductApi, PurchaseApi, ReportsApi, SalesApi, SecurityApi, SettingsApi, UpdateApi } from "@/types/stylecraft-api";
+import { createMockApi } from "@/test/mock-api";
+import type { BackupApi, InvoiceApi, SecurityApi, SettingsApi, UpdateApi } from "@/types/stylecraft-api";
 
 describe("SettingsScreen", () => {
   let backupApi: BackupApi;
@@ -47,8 +48,7 @@ describe("SettingsScreen", () => {
       check: vi.fn().mockResolvedValue({ status: "up-to-date", currentVersion: "0.1.4" }),
     };
     invoicesApi = {
-      getBySaleId: vi.fn().mockResolvedValue({}),
-      getCustomerStatement: vi.fn().mockResolvedValue({}),
+      getBill: vi.fn().mockResolvedValue({}),
       getFolder: vi.fn().mockResolvedValue({ folder: "D:/Invoices", isDefaultFolder: false }),
       chooseFolder: vi.fn().mockResolvedValue("E:/StyleCraftInvoices"),
       updateFolder: vi.fn().mockResolvedValue({ folder: "E:/StyleCraftInvoices", isDefaultFolder: false }),
@@ -62,19 +62,7 @@ describe("SettingsScreen", () => {
       verifyEditPassword: vi.fn().mockResolvedValue(true),
     };
 
-    window.stylecraft = {
-      backup: backupApi,
-      dashboard: { getSummary: vi.fn().mockResolvedValue({}) } as unknown as DashboardApi,
-      invoices: invoicesApi,
-      products: { list: vi.fn().mockResolvedValue([]), create: vi.fn().mockResolvedValue({}), update: vi.fn().mockResolvedValue({}), markInactive: vi.fn().mockResolvedValue({}) } as unknown as ProductApi,
-      purchases: { list: vi.fn().mockResolvedValue([]), create: vi.fn().mockResolvedValue({}), listSuppliers: vi.fn().mockResolvedValue([]), createSupplier: vi.fn().mockResolvedValue({}) } as unknown as PurchaseApi,
-      reports: { getReports: vi.fn().mockResolvedValue({}) } as unknown as ReportsApi,
-      sales: { list: vi.fn().mockResolvedValue([]), create: vi.fn().mockResolvedValue({}), listCustomers: vi.fn().mockResolvedValue([]), createCustomer: vi.fn().mockResolvedValue({}) } as unknown as SalesApi,
-      settings: settingsApi,
-      ledger: {} as never,
-      security: securityApi,
-      update: updateApi,
-    };
+    window.stylecraft = createMockApi({ backup: backupApi, invoices: invoicesApi, settings: settingsApi, security: securityApi, update: updateApi });
   });
 
   it("loads and saves business settings", async () => {

@@ -3,11 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
+import type { SaleJobInput } from "../src/types/stylecraft-api";
+import { createCustomer } from "./contacts-service";
+import { recordPayment } from "./ledger-service";
 import { runMigrations } from "./migrate";
-import { createProduct, type ProductInput } from "./products-service";
-import { createPurchase, createSupplier } from "./purchases-service";
-import { getReports } from "./reports-service";
-import { createCustomer, createSale } from "./sales-service";
+import { getReports, ReportValidationError } from "./reports-service";
+import { createSale } from "./sales-service";
 
 const tempDirs: string[] = [];
 
@@ -18,112 +19,64 @@ afterEach(() => {
 });
 
 function makeTempDatabasePath() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stylecraft-reports-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "islamia-reports-"));
   tempDirs.push(dir);
   const databasePath = path.join(dir, "test.sqlite");
   runMigrations(databasePath);
   return databasePath;
 }
 
-function makeProductInput(overrides: Partial<ProductInput> = {}): ProductInput {
-  return {
-    name: "Shirt",
-    sku: "A1",
-    categoryName: "Apparel",
-    purchasePriceCents: 1_000,
-    sellingPriceCents: 1_500,
-    currentStock: 5,
-    lowStockThreshold: 2,
-    isActive: true,
-    ...overrides,
-  };
+const none = { qty: 0, rateCents: 0 };
+
+function job(jobName: string, overrides: Partial<SaleJobInput>): SaleJobInput {
+  return { jobName, rota: none, gto: none, cutting: none, lamination: none, dye: none, ...overrides };
 }
 
 describe("reports service", () => {
-  it("builds sales, purchase, profit, and stock reports with date filters", () => {
+  it("lists every job sold in the range with totals per kind of work", () => {
     const databasePath = makeTempDatabasePath();
-    const shirt = createProduct(databasePath, makeProductInput({ name: "Oxford Shirt", sku: "SHIRT", purchasePriceCents: 1_000, currentStock: 5 }));
-    const pants = createProduct(databasePath, makeProductInput({ name: "Chino Pants", sku: "PANTS", purchasePriceCents: 2_000, currentStock: 3 }));
-    const supplier = createSupplier(databasePath, { name: "Fabric House" });
-    const customer = createCustomer(databasePath, { name: "Jane Buyer" });
+    const ali = createCustomer(databasePath, { name: "Ali" });
+    const bilal = createCustomer(databasePath, { name: "Bilal" });
 
-    createPurchase(databasePath, {
-      supplierId: supplier.id,
-      purchaseDate: new Date(2026, 6, 9, 9),
-      items: [
-        { variantId: shirt.variants[0].id, quantity: 4, unitCostCents: 1_000 },
-        { variantId: pants.variants[0].id, quantity: 2, unitCostCents: 2_000 },
-      ],
-      notes: "Included purchase",
-    });
-    createPurchase(databasePath, {
-      supplierId: supplier.id,
-      purchaseDate: new Date(2026, 5, 30, 9),
-      items: [{ variantId: shirt.variants[0].id, quantity: 1, unitCostCents: 1_000 }],
-      notes: "Old purchase",
-    });
     createSale(databasePath, {
-      customerId: customer.id,
-      saleDate: new Date(2026, 6, 9, 10),
-      paymentMethod: "Cash",
-      notes: "Included sale",
-      items: [
-        { variantId: shirt.variants[0].id, quantity: 2, unitPriceCents: 1_500, discountAmountCents: 100 },
-        { variantId: pants.variants[0].id, quantity: 1, unitPriceCents: 3_000 },
-      ],
+      customerId: ali.id,
+      saleDate: "2026-11-01",
+      jobs: [job("Cards", { rota: { qty: 100, rateCents: 100 } }), job("Bill books", { gto: { qty: 2, rateCents: 5_000 }, cutting: { qty: 1, rateCents: 500 } })],
     });
-    createSale(databasePath, {
-      customerId: customer.id,
-      saleDate: new Date(2026, 5, 30, 10),
-      items: [{ variantId: shirt.variants[0].id, quantity: 1, unitPriceCents: 1_500 }],
-    });
+    createSale(databasePath, { customerId: bilal.id, saleDate: "2026-11-20", jobs: [job("Boxes", { dye: { qty: 3, rateCents: 1_000 }, lamination: { qty: 1, rateCents: 700 } })] });
+    createSale(databasePath, { customerId: bilal.id, saleDate: "2026-12-01", jobs: [job("Outside", { dye: { qty: 1, rateCents: 99_999 } })] });
+    recordPayment(databasePath, { customerId: ali.id, amountCents: 4_000, paymentDate: "2026-11-15" });
+    recordPayment(databasePath, { customerId: ali.id, amountCents: 9_999, paymentDate: "2026-12-15" });
 
-    const reports = getReports(databasePath, { startDate: "2026-07-01", endDate: "2026-07-31" });
+    const report = getReports(databasePath, { startDate: "2026-11-01", endDate: "2026-11-30" });
 
-    expect(reports.salesRows).toEqual([
-      expect.objectContaining({
-        invoiceNumber: "INV-000001",
-        customerName: "Jane Buyer",
-        itemCount: 2,
-        subtotalCents: 6_000,
-        discountAmountCents: 100,
-        totalAmountCents: 5_900,
-        profitAmountCents: 1_900,
-        paymentMethod: "Cash",
-        notes: "Included sale",
-      }),
+    expect(report.rows.map((row) => [row.billNumber, row.customerName, row.jobName, row.totalAmountCents])).toEqual([
+      [1, "Ali", "Cards", 10_000],
+      [1, "Ali", "Bill books", 10_500],
+      [2, "Bilal", "Boxes", 3_700],
     ]);
-    expect(reports.purchaseRows).toEqual([
-      expect.objectContaining({ supplierName: "Fabric House", itemCount: 2, totalAmountCents: 8_000, notes: "Included purchase" }),
-    ]);
-    expect(reports.profitRows).toEqual([
-      expect.objectContaining({ invoiceNumber: "INV-000001", revenueCents: 5_900, costCents: 4_000, discountAmountCents: 100, profitAmountCents: 1_900 }),
-    ]);
-    expect(reports.stockRows).toEqual([
-      expect.objectContaining({ name: "Chino Pants", currentStock: 4, inventoryValueCents: 8_000, isLowStock: false }),
-      expect.objectContaining({ name: "Oxford Shirt", currentStock: 7, inventoryValueCents: 7_000, isLowStock: false }),
-    ]);
-    expect(reports.totals).toMatchObject({
-      salesTotalCents: 5_900,
-      purchaseTotalCents: 8_000,
-      revenueCents: 5_900,
-      costCents: 4_000,
-      discountCents: 100,
-      profitCents: 1_900,
-      stockQuantity: 11,
-      inventoryValueCents: 15_000,
-    });
+    expect(report.workTotals).toEqual({ rota: 10_000, gto: 10_000, cutting: 500, lamination: 700, dye: 3_000 });
+    expect(report.salesTotalCents).toBe(24_200);
+    expect(report.billCount).toBe(2);
+    expect(report.jobCount).toBe(3);
+    expect(report.receivedCents).toBe(4_000);
   });
 
-  it("returns empty date-filtered reports while stock remains current-state", () => {
+  it("narrows to one customer", () => {
     const databasePath = makeTempDatabasePath();
-    createProduct(databasePath, makeProductInput({ name: "Stock Only", sku: "STOCK", currentStock: 2, lowStockThreshold: 5 }));
+    const ali = createCustomer(databasePath, { name: "Ali" });
+    const bilal = createCustomer(databasePath, { name: "Bilal" });
 
-    const reports = getReports(databasePath, { startDate: "2026-01-01", endDate: "2026-01-31" });
+    createSale(databasePath, { customerId: ali.id, saleDate: "2026-11-01", jobs: [job("Cards", { rota: { qty: 1, rateCents: 100 } })] });
+    createSale(databasePath, { customerId: bilal.id, saleDate: "2026-11-01", jobs: [job("Boxes", { rota: { qty: 1, rateCents: 200 } })] });
 
-    expect(reports.salesRows).toEqual([]);
-    expect(reports.purchaseRows).toEqual([]);
-    expect(reports.profitRows).toEqual([]);
-    expect(reports.stockRows).toEqual([expect.objectContaining({ name: "Stock Only", isLowStock: true })]);
+    expect(getReports(databasePath, { customerId: bilal.id }).rows.map((row) => row.jobName)).toEqual(["Boxes"]);
+  });
+
+  it("refuses a backwards or malformed date range", () => {
+    const databasePath = makeTempDatabasePath();
+
+    expect(() => getReports(databasePath, { startDate: "2026-11-02", endDate: "2026-11-01" })).toThrow(ReportValidationError);
+    expect(() => getReports(databasePath, { startDate: "02/11/2026" })).toThrow(ReportValidationError);
   });
 });

@@ -1,14 +1,11 @@
-import { BarChart3, Boxes, FileText, LayoutDashboard, Moon, NotebookText, RotateCcw, Settings, ShoppingCart, Sun, Truck, Users } from "lucide-react";
+import { BarChart3, FileText, LayoutDashboard, Moon, NotebookText, Settings, ShoppingCart, Sun, Users } from "lucide-react";
 import { useState } from "react";
 
 import { moduleCards, sections, type IconName, type SectionId } from "@/app-content";
 import ContactsScreen from "@/components/contacts/ContactsScreen";
 import DashboardScreen from "@/components/dashboard/DashboardScreen";
 import LedgerScreen from "@/components/ledger/LedgerScreen";
-import ProductsScreen from "@/components/products/ProductsScreen";
-import PurchasesScreen from "@/components/purchases/PurchasesScreen";
 import ReportsScreen from "@/components/reports/ReportsScreen";
-import ReturnsScreen from "@/components/returns/ReturnsScreen";
 import SalesScreen from "@/components/sales/SalesScreen";
 import SettingsScreen from "@/components/settings/SettingsScreen";
 import { Button } from "@/components/ui/button";
@@ -21,13 +18,9 @@ const icons = {
   contacts: Users,
   dashboard: LayoutDashboard,
   ledger: NotebookText,
-  products: Boxes,
-  purchases: Truck,
   reports: FileText,
-  returns: RotateCcw,
   sales: ShoppingCart,
   settings: Settings,
-  stock: Boxes,
 } satisfies Record<IconName, typeof LayoutDashboard>;
 
 export default function App() {
@@ -40,16 +33,16 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-950 dark:text-slate-50">
       <div className="flex min-h-screen flex-col md:flex-row">
-        <aside className="border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 md:w-72 md:border-b-0 md:border-r">
+        <aside className="border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 md:w-60 md:shrink-0 md:border-b-0 md:border-r">
           <div className="mb-6">
             <div className="flex items-center gap-3">
               <img alt="Islamia Printers logo" className="h-12 w-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1" src={styleCraftLogoDataUri} />
               <div>
                 <div className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-600 dark:text-blue-400">Islamia Printers</div>
-                <h1 className="mt-1 text-2xl font-bold tracking-tight">Inventory</h1>
+                <h1 className="mt-1 text-2xl font-bold tracking-tight">Sales & Khata</h1>
               </div>
             </div>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Desktop stock control for daily business operations.</p>
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Job bills and customer ledgers for the press.</p>
           </div>
 
           <nav className="grid gap-2" aria-label="Main navigation">
@@ -88,21 +81,15 @@ export default function App() {
           </div>
         </aside>
 
-        <main className="flex-1 p-6 md:p-8">
-          <section className="mx-auto max-w-5xl">
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-sm md:p-8">
+        <main className="min-w-0 flex-1 p-4 md:p-6">
+          <section className="mx-auto max-w-7xl">
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm md:p-6">
               {activeSection.id === "dashboard" ? (
                 <DashboardScreen />
-              ) : activeSection.id === "products" ? (
-                <ProductsScreen />
               ) : activeSection.id === "contacts" ? (
                 <ContactsScreen />
-              ) : activeSection.id === "purchases" ? (
-                <PurchasesScreen />
               ) : activeSection.id === "sales" ? (
                 <SalesScreen />
-              ) : activeSection.id === "returns" ? (
-                <ReturnsScreen />
               ) : activeSection.id === "ledger" ? (
                 <LedgerScreen />
               ) : activeSection.id === "reports" ? (

@@ -1,355 +1,351 @@
 import { useCallback, useEffect, useState } from "react";
 
-import InvoicePreview from "@/components/invoices/InvoicePreview";
-import StatementPreview from "@/components/invoices/StatementPreview";
-import PaidInFullRepairPanel from "@/components/ledger/PaidInFullRepairPanel";
+import BillPreview from "@/components/invoices/BillPreview";
+import DocumentPanel from "@/components/invoices/DocumentPanel";
+import LedgerTable from "@/components/ledger/LedgerTable";
 import { Button } from "@/components/ui/button";
+import { ErrorBanner, inputClass, labelClass, ScreenHeader, SuccessBanner } from "@/components/ui/form";
 import { formatCurrency } from "@/lib/currency";
-import type { CustomerStatementDto, InvoiceDetailDto, LedgerPartySummaryDto, LedgerPartyType, LedgerStatementDto, LedgerSummaryDto } from "@/types/stylecraft-api";
-
-/** Whichever printable document the khata has open, if any. */
-type OpenDocument = { kind: "invoice"; invoice: InvoiceDetailDto } | { kind: "statement"; statement: CustomerStatementDto };
-
-const inputClass =
-  "rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/50";
-
-function formatDate(value: Date) {
-  return new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(new Date(value));
-}
-
-function todayInputValue() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function parseAmountToCents(value: string) {
-  const amount = Number(value);
-
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return null;
-  }
-
-  return Math.round(amount * 100);
-}
-
-const entryLabels: Record<LedgerStatementDto["entries"][number]["kind"], string> = {
-  opening: "Opening balance",
-  sale: "Sale",
-  purchase: "Purchase",
-  payment: "Payment",
-  sale_return: "Sale return",
-  purchase_return: "Purchase return",
-};
+import { firstDayOfMonthInputValue, formatDate, parseRupeesToCents, toDayInputValue } from "@/lib/format";
+import { buildLedgerHtml, ledgerDocumentFileName } from "@/lib/invoice-document";
+import type { BillDocumentDto, LedgerStatementDto, LedgerSummaryDto } from "@/types/stylecraft-api";
 
 export default function LedgerScreen() {
-  const [partyType, setPartyType] = useState<LedgerPartyType>("customer");
   const [summary, setSummary] = useState<LedgerSummaryDto | null>(null);
-  const [statement, setStatement] = useState<LedgerStatementDto | null>(null);
-  const [selectedPartyId, setSelectedPartyId] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
   const [showSettled, setShowSettled] = useState(true);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isWorking, setIsWorking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [statement, setStatement] = useState<LedgerStatementDto | null>(null);
+  const [bill, setBill] = useState<BillDocumentDto | null>(null);
+
+  const [paymentDate, setPaymentDate] = useState(() => toDayInputValue());
   const [paymentAmount, setPaymentAmount] = useState("");
-  const [paymentDate, setPaymentDate] = useState(todayInputValue);
-  const [paymentMethod, setPaymentMethod] = useState("Cash");
-  const [paymentNotes, setPaymentNotes] = useState("");
-  const [openDocument, setOpenDocument] = useState<OpenDocument | null>(null);
-  const [loadingDocumentKey, setLoadingDocumentKey] = useState<string | null>(null);
+  const [paymentNarration, setPaymentNarration] = useState("cash");
+  const [nextReceiptNumber, setNextReceiptNumber] = useState<number | null>(null);
+
+  const [isPasswordSet, setIsPasswordSet] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{ paymentId: number; receiptNumber: number } | null>(null);
+  const [pendingPassword, setPendingPassword] = useState("");
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   const loadSummary = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+    setSummary(await window.stylecraft.ledger.getSummary());
+  }, []);
 
-    try {
-      setSummary(await window.stylecraft.ledger.getSummary());
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Could not load the ledger.");
-    } finally {
-      setIsLoading(false);
-    }
+  const loadStatement = useCallback(async (customerId: number, from: string, to: string) => {
+    setStatement(await window.stylecraft.ledger.getStatement(customerId, { startDate: from || null, endDate: to || null }));
   }, []);
 
   useEffect(() => {
-    void loadSummary();
+    async function load() {
+      setIsLoading(true);
+
+      try {
+        await loadSummary();
+        setNextReceiptNumber(await window.stylecraft.ledger.nextReceiptNumber());
+        setIsPasswordSet((await window.stylecraft.security.getEditPasswordStatus()).isSet);
+      } catch (caughtError) {
+        setError(caughtError instanceof Error ? caughtError.message : "Could not load the ledger.");
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    void load();
   }, [loadSummary]);
 
-  const openStatement = useCallback(async (nextPartyType: LedgerPartyType, partyId: number) => {
-    setError(null);
-    setSelectedPartyId(partyId);
-    setOpenDocument(null);
-
-    try {
-      setStatement(await window.stylecraft.ledger.getStatement(nextPartyType, partyId));
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Could not load the statement.");
+  useEffect(() => {
+    if (selectedCustomerId === null) {
+      setStatement(null);
+      return;
     }
-  }, []);
 
-  function switchPartyType(nextPartyType: LedgerPartyType) {
-    setPartyType(nextPartyType);
-    setSelectedPartyId(null);
-    setStatement(null);
-    setOpenDocument(null);
-  }
+    loadStatement(selectedCustomerId, startDate, endDate).catch((caughtError: unknown) =>
+      setError(caughtError instanceof Error ? caughtError.message : "Could not load the khata."),
+    );
+  }, [selectedCustomerId, startDate, endDate, loadStatement]);
 
-  async function loadDocument(key: string, load: () => Promise<OpenDocument>) {
+  function openCustomer(customerId: number) {
     setError(null);
-    setLoadingDocumentKey(key);
+    setMessage(null);
+    setBill(null);
+    setSelectedCustomerId(customerId);
+  }
 
-    try {
-      setOpenDocument(await load());
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Could not open the invoice.");
-    } finally {
-      setLoadingDocumentKey(null);
+  async function refreshAfterChange() {
+    await loadSummary();
+    setNextReceiptNumber(await window.stylecraft.ledger.nextReceiptNumber());
+
+    if (selectedCustomerId !== null) {
+      await loadStatement(selectedCustomerId, startDate, endDate);
     }
-  }
-
-  async function handleViewInvoice(saleId: number) {
-    await loadDocument(`invoice-${saleId}`, async () => ({ kind: "invoice", invoice: await window.stylecraft.invoices.getBySaleId(saleId) }));
-  }
-
-  async function handleViewFullStatement(customerId: number) {
-    await loadDocument("statement", async () => ({ kind: "statement", statement: await window.stylecraft.invoices.getCustomerStatement(customerId) }));
   }
 
   async function handleRecordPayment(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setMessage(null);
 
-    if (selectedPartyId === null) {
-      setError("Choose whose payment this is first.");
+    if (selectedCustomerId === null) {
       return;
     }
 
-    const amountCents = parseAmountToCents(paymentAmount);
+    const amountCents = parseRupeesToCents(paymentAmount);
 
-    if (amountCents === null) {
+    if (amountCents === null || amountCents <= 0) {
       setError("Payment amount must be more than zero.");
       return;
     }
 
-    setIsWorking(true);
+    setIsSaving(true);
 
     try {
-      await window.stylecraft.ledger.recordPayment({
-        partyType,
-        partyId: selectedPartyId,
+      const payment = await window.stylecraft.ledger.recordPayment({
+        customerId: selectedCustomerId,
         amountCents,
-        paymentDate: new Date(`${paymentDate}T00:00:00`),
-        method: paymentMethod,
-        notes: paymentNotes,
+        paymentDate,
+        narration: paymentNarration,
       });
 
+      setMessage(`Receipt ${payment.receiptNumber} CR saved — ${formatCurrency(payment.amountCents)} received.`);
       setPaymentAmount("");
-      setPaymentNotes("");
-      await loadSummary();
-      await openStatement(partyType, selectedPartyId);
+      await refreshAfterChange();
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not record the payment.");
     } finally {
-      setIsWorking(false);
+      setIsSaving(false);
     }
   }
 
-  const rows: LedgerPartySummaryDto[] = (partyType === "customer" ? summary?.customers : summary?.suppliers) ?? [];
-  const visibleRows = showSettled ? rows : rows.filter((row) => row.balanceCents !== 0);
-  const outstandingCents = partyType === "customer" ? (summary?.customerReceivableCents ?? 0) : (summary?.supplierPayableCents ?? 0);
+  function requestDeletePayment(paymentId: number, receiptNumber: number) {
+    setError(null);
+    setMessage(null);
+
+    if (isPasswordSet) {
+      setPendingDelete({ paymentId, receiptNumber });
+      setPendingPassword("");
+      return;
+    }
+
+    void deletePayment(paymentId, receiptNumber, "");
+  }
+
+  async function deletePayment(paymentId: number, receiptNumber: number, password: string) {
+    if (!window.confirm(`Delete receipt ${receiptNumber} CR? The amount will go back onto the khata.`)) {
+      return;
+    }
+
+    try {
+      await window.stylecraft.ledger.deletePayment(paymentId, password);
+      setPendingDelete(null);
+      setMessage(`Receipt ${receiptNumber} CR deleted.`);
+      await refreshAfterChange();
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Could not delete the payment.");
+    }
+  }
+
+  async function viewBill(saleId: number) {
+    try {
+      setBill(await window.stylecraft.invoices.getBill(saleId));
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Could not open the bill.");
+    }
+  }
+
+  const rows = summary?.customers ?? [];
+  const term = search.trim().toLowerCase();
+  const visibleRows = rows.filter(
+    (row) => (showSettled || row.balanceCents !== 0) && (term === "" || row.customerName.toLowerCase().includes(term) || (row.phone ?? "").includes(term)),
+  );
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Khata</p>
-        <h2 className="mt-1 text-3xl font-bold tracking-tight">Ledger</h2>
-        <p className="mt-2 max-w-2xl text-slate-600 dark:text-slate-300">
-          Every unpaid sale and purchase, and every payment against it. A balance is the opening balance plus invoices, minus payments and returns. Old udhaar
-          from before this software is entered as an opening balance on the contact.
-        </p>
+      <ScreenHeader kicker="Khata" title="Ledger">
+        Every customer's statement of account: the opening balance, each bill job by job with a sub-total, and every payment received. Pick a date range to print
+        a statement for just that period; everything before it is carried in as the opening balance.
+      </ScreenHeader>
+
+      {error ? <ErrorBanner>{error}</ErrorBanner> : null}
+      {message ? <SuccessBanner>{message}</SuccessBanner> : null}
+
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-blue-50 dark:bg-blue-950/40 px-4 py-3">
+        <div className="text-sm text-slate-600 dark:text-slate-300">Total receivable (wusooli baqi)</div>
+        <div className="text-2xl font-bold text-slate-950 dark:text-slate-50">{formatCurrency(summary?.totalReceivableCents ?? 0)}</div>
       </div>
 
-      {error ? (
-        <div className="rounded-2xl border border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-950/30 px-4 py-3 text-sm font-medium text-red-700 dark:text-red-300" role="alert">
-          {error}
-        </div>
-      ) : null}
-
-      <PaidInFullRepairPanel
-        onRepaired={async () => {
-          await loadSummary();
-
-          if (selectedPartyId !== null) {
-            await openStatement(partyType, selectedPartyId);
-          }
-        }}
-      />
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={() => switchPartyType("customer")} size="sm" type="button" variant={partyType === "customer" ? "default" : "ghost"}>
-          Customers owe us
-        </Button>
-        <Button onClick={() => switchPartyType("supplier")} size="sm" type="button" variant={partyType === "supplier" ? "default" : "ghost"}>
-          We owe suppliers
-        </Button>
-        <label className="ml-auto flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end">
+        <label className={`${labelClass} flex-1`} htmlFor="ledger-search">
+          Search customer
+          <input className={inputClass} id="ledger-search" onChange={(event) => setSearch(event.target.value)} placeholder="Name or phone" value={search} />
+        </label>
+        <label className="flex items-center gap-2 pb-2 text-sm text-slate-600 dark:text-slate-300">
           <input checked={showSettled} onChange={(event) => setShowSettled(event.target.checked)} type="checkbox" />
           Show settled accounts
         </label>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-blue-50 dark:bg-blue-950/40 px-4 py-3">
-        <div className="text-sm text-slate-600 dark:text-slate-300">{partyType === "customer" ? "Total receivable" : "Total payable"}</div>
-        <div className="text-2xl font-bold text-slate-950 dark:text-slate-50">{formatCurrency(outstandingCents)}</div>
-      </div>
-
-      <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700 text-left text-sm">
-            <thead className="bg-slate-50 dark:bg-slate-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
+        <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700 text-left text-sm">
+          <thead className="bg-slate-50 dark:bg-slate-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            <tr>
+              <th className="px-4 py-3 font-semibold">Customer</th>
+              <th className="px-4 py-3 text-right font-semibold">Opening</th>
+              <th className="px-4 py-3 text-right font-semibold">Billed</th>
+              <th className="px-4 py-3 text-right font-semibold">Received</th>
+              <th className="px-4 py-3 text-right font-semibold">Balance</th>
+              <th className="px-4 py-3 font-semibold">Last entry</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
+            {isLoading ? (
               <tr>
-                <th className="px-4 py-3 font-semibold">{partyType === "customer" ? "Customer" : "Supplier"}</th>
-                <th className="px-4 py-3 font-semibold">Opening</th>
-                <th className="px-4 py-3 font-semibold">Invoiced</th>
-                <th className="px-4 py-3 font-semibold">Paid</th>
-                <th className="px-4 py-3 font-semibold">Returned</th>
-                <th className="px-4 py-3 font-semibold">Balance</th>
+                <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={6}>
+                  Loading ledger...
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
-              {isLoading ? (
-                <tr>
-                  <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={6}>
-                    Loading ledger...
+            ) : visibleRows.length === 0 ? (
+              <tr>
+                <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={6}>
+                  {rows.length === 0 ? "No customers yet. Add one from Customers or while making a bill." : "No matching accounts."}
+                </td>
+              </tr>
+            ) : (
+              visibleRows.map((row) => (
+                <tr
+                  className={`cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 ${selectedCustomerId === row.customerId ? "bg-blue-50 dark:bg-blue-950/40" : ""}`}
+                  key={row.customerId}
+                  onClick={() => openCustomer(row.customerId)}
+                >
+                  <td className="px-4 py-3">
+                    <div className="font-semibold text-slate-950 dark:text-slate-50">{row.customerName}</div>
+                    {row.phone ? <div className="text-xs text-slate-500 dark:text-slate-400">{row.phone}</div> : null}
                   </td>
-                </tr>
-              ) : visibleRows.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={6}>
-                    {rows.length === 0 ? "No accounts yet." : "Nothing outstanding — every account is settled."}
+                  <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">{row.openingBalanceCents === 0 ? "-" : formatCurrency(row.openingBalanceCents)}</td>
+                  <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">{formatCurrency(row.billedCents)}</td>
+                  <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">{formatCurrency(row.receivedCents)}</td>
+                  <td className={`px-4 py-3 text-right font-semibold ${row.balanceCents > 0 ? "text-red-600 dark:text-red-400" : "text-slate-950 dark:text-slate-50"}`}>
+                    {formatCurrency(row.balanceCents)}
                   </td>
+                  <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{row.lastActivityDate ? formatDate(row.lastActivityDate) : "-"}</td>
                 </tr>
-              ) : (
-                visibleRows.map((row) => (
-                  <tr
-                    className={`cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 ${selectedPartyId === row.partyId ? "bg-blue-50 dark:bg-blue-950/40" : ""}`}
-                    key={row.partyId}
-                    onClick={() => void openStatement(partyType, row.partyId)}
-                  >
-                    <td className="px-4 py-4">
-                      <div className="font-semibold text-slate-950 dark:text-slate-50">{row.partyName}</div>
-                      {row.phone ? <div className="text-xs text-slate-500 dark:text-slate-400">{row.phone}</div> : null}
-                    </td>
-                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{row.openingBalanceCents === 0 ? "-" : formatCurrency(row.openingBalanceCents)}</td>
-                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{formatCurrency(row.invoicedCents)}</td>
-                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{formatCurrency(row.paidCents)}</td>
-                    <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{formatCurrency(row.returnedCents)}</td>
-                    <td className={`px-4 py-4 font-semibold ${row.balanceCents > 0 ? "text-red-600 dark:text-red-400" : "text-slate-950 dark:text-slate-50"}`}>
-                      {formatCurrency(row.balanceCents)}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
       {statement ? (
-        <section className="space-y-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
-          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-            <div>
-              <h3 className="font-semibold text-slate-950 dark:text-slate-50">{statement.partyName}</h3>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Balance {formatCurrency(statement.balanceCents)} {statement.balanceCents > 0 ? (partyType === "customer" ? "still to collect" : "still to pay") : "— settled"}
-              </p>
-            </div>
+        <section className="space-y-4">
+          <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4 md:flex-row md:items-end">
+            <label className={labelClass} htmlFor="ledger-from">
+              From date
+              <input className={inputClass} id="ledger-from" onChange={(event) => setStartDate(event.target.value)} type="date" value={startDate} />
+            </label>
+            <label className={labelClass} htmlFor="ledger-to">
+              To date
+              <input className={inputClass} id="ledger-to" onChange={(event) => setEndDate(event.target.value)} type="date" value={endDate} />
+            </label>
             <div className="flex flex-wrap gap-2">
-              {partyType === "customer" ? (
-                <Button disabled={loadingDocumentKey === "statement"} onClick={() => void handleViewFullStatement(statement.partyId)} size="sm" type="button">
-                  {loadingDocumentKey === "statement" ? "Opening..." : "View full statement"}
-                </Button>
-              ) : null}
-              <Button onClick={() => { setStatement(null); setSelectedPartyId(null); setOpenDocument(null); }} size="sm" type="button" variant="ghost">
-                Close
+              <Button
+                onClick={() => {
+                  setStartDate(firstDayOfMonthInputValue());
+                  setEndDate(toDayInputValue());
+                }}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                This month
+              </Button>
+              <Button
+                onClick={() => {
+                  setStartDate("");
+                  setEndDate("");
+                }}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                All dates
+              </Button>
+              <Button onClick={() => setSelectedCustomerId(null)} size="sm" type="button" variant="ghost">
+                Close khata
               </Button>
             </div>
           </div>
 
-          {openDocument === null ? null : openDocument.kind === "invoice" ? (
-            <InvoicePreview invoice={openDocument.invoice} onClose={() => setOpenDocument(null)} />
-          ) : (
-            <StatementPreview onClose={() => setOpenDocument(null)} statement={openDocument.statement} />
-          )}
+          <DocumentPanel
+            fileName={ledgerDocumentFileName(statement)}
+            html={buildLedgerHtml(statement)}
+            kicker="Statement of account"
+            landscape
+            onClose={() => setSelectedCustomerId(null)}
+            subtitle={`A/C No. ${statement.customer.id}${statement.customer.phone ? ` · ${statement.customer.phone}` : ""} · Balance ${formatCurrency(statement.closingBalanceCents)}`}
+            title={statement.customer.name}
+          >
+            <LedgerTable onDeletePayment={requestDeletePayment} onViewBill={(saleId) => void viewBill(saleId)} statement={statement} />
+          </DocumentPanel>
 
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700 text-left text-sm">
-              <thead className="bg-slate-50 dark:bg-slate-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                <tr>
-                  <th className="px-4 py-3 font-semibold">Date</th>
-                  <th className="px-4 py-3 font-semibold">Entry</th>
-                  <th className="px-4 py-3 font-semibold">Reference</th>
-                  <th className="px-4 py-3 font-semibold">Debit</th>
-                  <th className="px-4 py-3 font-semibold">Credit</th>
-                  <th className="px-4 py-3 font-semibold">Balance</th>
-                  <th className="px-4 py-3 font-semibold">Invoice</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {statement.entries.length === 0 ? (
-                  <tr>
-                    <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={7}>
-                      No entries yet.
-                    </td>
-                  </tr>
-                ) : (
-                  statement.entries.map(({ saleId, ...entry }, index) => (
-                    <tr key={`${entry.kind}-${entry.reference}-${index}`}>
-                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{formatDate(entry.date)}</td>
-                      <td className="px-4 py-3 text-slate-950 dark:text-slate-50">{entryLabels[entry.kind]}</td>
-                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{entry.reference}</td>
-                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{entry.debitCents === 0 ? "-" : formatCurrency(entry.debitCents)}</td>
-                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{entry.creditCents === 0 ? "-" : formatCurrency(entry.creditCents)}</td>
-                      <td className="px-4 py-3 font-medium text-slate-950 dark:text-slate-50">{formatCurrency(entry.balanceCents)}</td>
-                      <td className="px-4 py-3">
-                        {saleId === null ? (
-                          <span className="text-slate-400 dark:text-slate-500">-</span>
-                        ) : (
-                          <Button disabled={loadingDocumentKey === `invoice-${saleId}`} onClick={() => void handleViewInvoice(saleId)} size="sm" type="button" variant="ghost">
-                            {loadingDocumentKey === `invoice-${saleId}` ? "Opening..." : "View"}
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          {bill ? <BillPreview bill={bill} onClose={() => setBill(null)} /> : null}
+
+          {pendingDelete ? (
+            <div className="flex flex-col gap-3 rounded-2xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-4 md:flex-row md:items-end">
+              <label className={`${labelClass} flex-1`} htmlFor="ledger-edit-password">
+                Edit password needed to delete receipt {pendingDelete.receiptNumber} CR
+                <input autoFocus className={inputClass} id="ledger-edit-password" onChange={(event) => setPendingPassword(event.target.value)} type="password" value={pendingPassword} />
+              </label>
+              <div className="flex gap-2">
+                <Button onClick={() => void deletePayment(pendingDelete.paymentId, pendingDelete.receiptNumber, pendingPassword)} type="button">
+                  Delete
+                </Button>
+                <Button onClick={() => setPendingDelete(null)} type="button" variant="ghost">
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           <form className="grid gap-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4" noValidate onSubmit={handleRecordPayment}>
-            <h4 className="font-semibold text-slate-950 dark:text-slate-50">{partyType === "customer" ? "Record money received" : "Record money paid"}</h4>
-
+            <h4 className="font-semibold text-slate-950 dark:text-slate-50">
+              Payment received from {statement.customer.name} {nextReceiptNumber !== null ? <span className="text-sm font-normal text-slate-500">(receipt {nextReceiptNumber} CR)</span> : null}
+            </h4>
             <div className="grid gap-4 md:grid-cols-4">
-              <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="payment-amount">
-                Amount
-                <input className={inputClass} id="payment-amount" min="0" onChange={(event) => setPaymentAmount(event.target.value)} step="0.01" type="number" value={paymentAmount} />
-              </label>
-              <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="payment-date">
+              <label className={labelClass} htmlFor="payment-date">
                 Date
                 <input className={inputClass} id="payment-date" onChange={(event) => setPaymentDate(event.target.value)} type="date" value={paymentDate} />
               </label>
-              <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="payment-method">
-                Method
-                <input className={inputClass} id="payment-method" onChange={(event) => setPaymentMethod(event.target.value)} type="text" value={paymentMethod} />
+              <label className={labelClass} htmlFor="payment-amount">
+                Amount
+                <input className={inputClass} id="payment-amount" inputMode="decimal" onChange={(event) => setPaymentAmount(event.target.value)} placeholder="0" value={paymentAmount} />
               </label>
-              <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="payment-notes">
-                Notes
-                <input className={inputClass} id="payment-notes" onChange={(event) => setPaymentNotes(event.target.value)} placeholder="Optional" type="text" value={paymentNotes} />
+              <label className={`${labelClass} md:col-span-2`} htmlFor="payment-narration">
+                Narration
+                <input
+                  className={inputClass}
+                  id="payment-narration"
+                  list="payment-narrations"
+                  onChange={(event) => setPaymentNarration(event.target.value)}
+                  placeholder="cash, mzn, bank..."
+                  value={paymentNarration}
+                />
+                <datalist id="payment-narrations">
+                  <option value="cash" />
+                  <option value="mzn" />
+                  <option value="bank" />
+                  <option value="cheque" />
+                </datalist>
               </label>
             </div>
-
             <div>
-              <Button disabled={isWorking} type="submit">
-                Save payment
+              <Button disabled={isSaving} type="submit">
+                {isSaving ? "Saving..." : "Save payment"}
               </Button>
             </div>
           </form>

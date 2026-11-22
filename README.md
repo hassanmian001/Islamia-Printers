@@ -1,86 +1,49 @@
-# Islamia Printers Sale/Purchase Software
+# Islamia Printers Sales & Khata Software
 
-Desktop sale/purchase, stock and khata software for Islamia Printers, cloned from the StyleCraft Inventory codebase.
+Desktop software for Islamia Printers: job bills entered by hand, and a khata (statement of account) for every customer that updates from them.
 
 ## Current State
 
-SQLite persistence with the database layer, Electron IPC bridge, preload API, and screens for Products, Purchases, Sales, Returns, Ledger, Dashboard, Reports and Settings; invoice preview, printing and PDF download; manual backup and restore; a Windows installer; and automatic updates from GitHub Releases.
+Sales bills with one line per printing job, customer khata with payments received, a printable statement of account laid out like a paper ledger, dashboard, sales report with Excel export, manual backup and restore, a Windows installer, automatic updates from GitHub Releases, and dark mode.
 
-Stock is held per size and colour, sales and purchases can be left part paid and tracked on a khata, a recorded sale can be corrected behind a password, and the whole app has a dark mode.
-
-## Dashboard
-
-- Show active product count and total stock quantity.
-- Show inventory value at stored purchase cost.
-- Show today sales, current month sales, and current month profit.
-- Show low-stock products.
-- Show best-selling products by sold quantity and sales value.
-
-## Products
-
-- One entry per style, with a table of its sizes and colours underneath.
-- Stock is held per size/colour; the product total is the sum of them.
-- A size can override the product's purchase price, selling price, or alert level; left blank it follows the product.
-- SKUs for each size/colour are filled in from the product SKU plus the size and colour, and can be typed over.
-- Click any row in the list to open that product for editing.
-- A style counts as low on stock when any one of its sizes is low.
-- Removing a size deletes it only if nothing references it; otherwise it is kept and deactivated so its history stays readable.
-- Stock adjustments are recorded against a specific size/colour.
-- Search products by name or SKU.
-- Filter products by category, low-stock status, and active status.
-
-## Purchases
-
-- Create supplier purchases with one or more lines, each naming a product and a size/colour.
-- Record how much was paid now; anything short of the total stays on the supplier's khata. An empty box means nothing has been paid yet, and "Paid in full" fills the total in one click.
-- Add suppliers inline while recording purchases.
-- Increase stock transactionally when a purchase is saved.
-- Record one stock movement per purchased product line.
-- Keep purchase history with supplier, item count, total, date, and notes.
+There is no product list, stock, purchase, supplier or return tracking. Those were removed on 2026-11-22; migration `0005_drop_inventory_tables` drops their tables.
 
 ## Sales
 
-- Create customer sales with one or more lines, each naming a product and a size/colour.
-- Record how much was paid now; anything short of the total stays on the customer's khata. An empty box means nothing has been paid yet, and "Paid in full" fills the total in one click.
-- A sale with nothing paid needs a customer, so the balance always has a khata to sit on.
-- Correct a recorded sale from its history row: the original stock deduction is put back and the new lines applied, so stock, profit and the customer's balance end up as if it had been entered that way.
-- Editing asks for the password set in Settings, checked in the main process. Sales that already have a return against them cannot be edited.
-- Add customers inline while recording sales.
-- Decrease stock transactionally when a sale is saved.
-- Block sales that exceed available stock.
-- Calculate sale totals, discounts, and profit from stored product cost.
-- Record one stock movement per sold product line.
-- Keep sale history with invoice number, customer, item count, total, profit, payment method, date, and notes.
+- One bill per customer visit, numbered automatically (shown as `15 SV` on the khata).
+- A bill holds one or more jobs. Each job has a job name and five kinds of work: Rota P, GTO P, Cutting, Lamination and Dye.
+- Each kind of work is quantity × rate. Leave the quantity empty for a flat charge and it counts as 1. Quantities may be fractional (2.5).
+- The job's Grand Total is the sum of its five amounts; the bill total is the sum of its jobs. Totals update as you type.
+- Every bill must belong to a customer; a new customer can be added from the bill form.
+- Bills can be viewed, printed and saved as PDF, edited and deleted. Editing and deleting ask for the edit password when one is set in Settings, checked in the main process, and leave an audit-log entry.
+- Bill history can be filtered by customer, date range, and bill number / customer / job name.
 
-## Ledger
+## Ledger (khata)
 
-- Customer khata: what each customer still owes, and supplier khata: what the shop still owes each supplier.
-- A balance is the opening balance plus invoices, minus payments and returns, so nothing is counted twice.
-- Udhaar from before this software is entered as an opening balance on the customer or supplier, and starts their khata.
-- Click a party to see a running statement, opening balance first, then every invoice, payment and return against them.
-- Open the invoice behind any khata line with View, to see what was bought on that date, in which size and colour, and at what price.
-- Open a customer's whole khata as one statement, with the items of every invoice underneath the running balance.
-- Download either document as a PDF, or print it.
-- Record a payment received or paid against an open balance.
-- Every account is listed, settled ones included, until the tick is taken off.
-- Sales left over from before v0.4.0, when an empty "Amount paid now" box meant paid in full, are listed for review and can be moved onto the customer's khata in one go.
+- A customer's balance is their opening balance plus every bill minus every payment received.
+- The statement of account shows the opening balance, then each bill job by job with a running balance and a Sub-Total row, payments received in between (`1003 CR`), a Grand Total row with totals per kind of work, and the final balance.
+- Pick a From / To date: everything before the From date is carried in as the opening balance, as on a printed statement.
+- Same-day entries keep the order they were typed in.
+- Download the statement as a landscape A4 PDF, or print it.
+- Record a payment received with date, amount and narration (cash, mzn, bank...). Each gets its own receipt number. A mistaken payment can be deleted behind the edit password.
+- Old udhaar from before this software is entered as the customer's opening balance.
+
+## Customers
+
+- Name, phone, email, address, notes and opening balance.
+- A customer can be deleted only while they have no bills or payments.
+
+## Dashboard
+
+- Today's and this month's sales, payments received this month, total receivable and customer count.
+- This month's sales split by kind of work.
+- The customers with the highest balances.
 
 ## Reports
 
-- View sales, purchase, profit, and stock reports.
-- Filter sales, purchase, and profit reports by date range.
-- Export the active report as an Excel-compatible CSV file.
-- Open a printable report view for print or save-as-PDF.
-
-## Invoices
-
-- Use persisted sale invoice numbers.
-- View invoice details from sale history, and from any sale line in the ledger.
-- Show business settings, optional customer details, line items with size and colour, discounts, and totals.
-- A customer statement gathers the khata and every invoice's items into one document.
-- Download an invoice or statement as a PDF, or open a printable view for print or save-as-PDF.
-- Downloads go to the invoice folder set in Settings and never overwrite a file that is already there; "Save as..." picks a folder for one download.
-- "Open folder" shows a saved PDF in File Explorer, ready to attach to an email or a WhatsApp chat.
+- Sales report for a date range, optionally for one customer: one row per job with each kind of work's qty × rate and amount.
+- Totals per kind of work, bills and jobs counted, and payments received in the same period.
+- Export as an Excel-compatible CSV (qty, rate and amount columns per kind of work), or print.
 
 ## Backup And Restore
 

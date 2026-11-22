@@ -1,342 +1,236 @@
-import { Download, FileText, Printer } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Download, Printer } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
+import CustomerPicker from "@/components/contacts/CustomerPicker";
 import { Button } from "@/components/ui/button";
+import { ErrorBanner, inputClass, labelClass, ScreenHeader } from "@/components/ui/form";
+import WorkCell from "@/components/invoices/WorkCell";
 import { formatCurrency } from "@/lib/currency";
-import type { ReportFilters, ReportsDto } from "@/types/stylecraft-api";
-
-type ReportType = "sales" | "purchases" | "profit" | "stock";
-
-type TableReport = {
-  title: string;
-  columns: string[];
-  rows: Array<Array<string | number>>;
-};
-
-const reportTypes: Array<{ id: ReportType; label: string }> = [
-  { id: "sales", label: "Sales" },
-  { id: "purchases", label: "Purchases" },
-  { id: "profit", label: "Profit" },
-  { id: "stock", label: "Stock" },
-];
-
-function formatDate(value: Date) {
-  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date(value));
-}
+import { firstDayOfMonthInputValue, formatAmount, formatAmountOrBlank, formatDate, formatQty, toDayInputValue } from "@/lib/format";
+import { escapeHtml, printDocumentHtml } from "@/lib/invoice-document";
+import { workKinds, workLabels } from "@/lib/job-math";
+import type { ContactDto, ReportsDto } from "@/types/stylecraft-api";
 
 function escapeCsvValue(value: string | number) {
   const text = String(value);
   return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
-function escapeHtml(value: string | number) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+const plain = (cents: number) => (cents / 100).toFixed(2);
+
+/** One line per job, with qty, rate and amount for each kind of work, so the sheet can be re-added in Excel. */
+export function buildSalesCsv(report: ReportsDto) {
+  const columns = [
+    "Date",
+    "Bill No",
+    "Customer",
+    "Job name",
+    ...workKinds.flatMap((kind) => [`${workLabels[kind]} qty`, `${workLabels[kind]} rate`, `${workLabels[kind]} amount`]),
+    "Grand Total",
+  ];
+  const rows = report.rows.map((row) => [
+    formatDate(row.saleDate),
+    row.billNumber,
+    row.customerName,
+    row.jobName,
+    ...workKinds.flatMap((kind) => [row[kind].qty, plain(row[kind].rateCents), plain(row[kind].amountCents)]),
+    plain(row.totalAmountCents),
+  ]);
+  const totals = ["", "", "", "Total", ...workKinds.flatMap((kind) => ["", "", plain(report.workTotals[kind])]), plain(report.salesTotalCents)];
+
+  return [columns, ...rows, totals].map((row) => row.map(escapeCsvValue).join(",")).join("\n");
 }
 
-function getTableReport(type: ReportType, reports: ReportsDto): TableReport {
-  if (type === "sales") {
-    return {
-      title: "Sales Report",
-      columns: ["Invoice", "Date", "Customer", "Items", "Subtotal", "Discount", "Total", "Profit", "Payment", "Notes"],
-      rows: reports.salesRows.map((row) => [
-        row.invoiceNumber,
-        formatDate(row.saleDate),
-        row.customerName ?? "No customer",
-        row.itemCount,
-        formatCurrency(row.subtotalCents),
-        formatCurrency(row.discountAmountCents),
-        formatCurrency(row.totalAmountCents),
-        formatCurrency(row.profitAmountCents),
-        row.paymentMethod ?? "-",
-        row.notes ?? "-",
-      ]),
-    };
-  }
-
-  if (type === "purchases") {
-    return {
-      title: "Purchase Report",
-      columns: ["Date", "Supplier", "Items", "Total", "Notes"],
-      rows: reports.purchaseRows.map((row) => [formatDate(row.purchaseDate), row.supplierName ?? "No supplier", row.itemCount, formatCurrency(row.totalAmountCents), row.notes ?? "-"],),
-    };
-  }
-
-  if (type === "profit") {
-    return {
-      title: "Profit Report",
-      columns: ["Invoice", "Date", "Customer", "Revenue", "Cost", "Discount", "Profit"],
-      rows: reports.profitRows.map((row) => [
-        row.invoiceNumber,
-        formatDate(row.saleDate),
-        row.customerName ?? "No customer",
-        formatCurrency(row.revenueCents),
-        formatCurrency(row.costCents),
-        formatCurrency(row.discountAmountCents),
-        formatCurrency(row.profitAmountCents),
-      ]),
-    };
-  }
-
-  return {
-    title: "Stock Report",
-    columns: ["Product", "Size / colour", "SKU", "Category", "Stock", "Low-stock threshold", "Purchase", "Selling", "Inventory value", "Low stock", "Status"],
-    rows: reports.stockRows.map((row) => [
-      row.name,
-      row.variantLabel,
-      row.sku,
-      row.categoryName ?? "Uncategorized",
-      row.currentStock,
-      row.lowStockThreshold,
-      formatCurrency(row.purchasePriceCents),
-      formatCurrency(row.sellingPriceCents),
-      formatCurrency(row.inventoryValueCents),
-      row.isLowStock ? "Yes" : "No",
-      row.isActive ? "Active" : "Inactive",
-    ]),
-  };
-}
-
-function downloadCsv(report: TableReport) {
-  const csv = [report.columns, ...report.rows].map((row) => row.map(escapeCsvValue).join(",")).join("\n");
-  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+function downloadCsv(fileName: string, csv: string) {
+  const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `${report.title.toLowerCase().replaceAll(" ", "-")}.csv`;
+  link.download = fileName;
   link.click();
   URL.revokeObjectURL(url);
 }
 
-function printReport(report: TableReport) {
-  const printableWindow = window.open("", "_blank");
-
-  if (printableWindow === null) {
-    throw new Error("Could not open print window.");
-  }
-
-  const headers = report.columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("");
+function buildReportHtml(report: ReportsDto, period: string) {
   const rows = report.rows
-    .map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`)
+    .map(
+      (row) =>
+        `<tr><td>${escapeHtml(formatDate(row.saleDate))}</td><td>${row.billNumber}</td><td>${escapeHtml(row.customerName)}</td><td>${escapeHtml(row.jobName)}</td>${workKinds
+          .map((kind) =>
+            row[kind].amountCents === 0
+              ? "<td></td>"
+              : `<td class="num">${escapeHtml(formatAmount(row[kind].amountCents))}<div class="sub">${escapeHtml(formatQty(row[kind].qty))} × ${escapeHtml(formatAmount(row[kind].rateCents))}</div></td>`,
+          )
+          .join("")}<td class="num">${escapeHtml(formatAmount(row.totalAmountCents))}</td></tr>`,
+    )
     .join("");
 
-  printableWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(report.title)}</title><style>body{font-family:Arial,sans-serif;margin:24px}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #cbd5e1;padding:8px;text-align:left}th{background:#f1f5f9}h1{font-size:20px}</style></head><body><h1>${escapeHtml(report.title)}</h1><table><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table></body></html>`);
-  printableWindow.document.close();
-  printableWindow.focus();
-  printableWindow.print();
-}
-
-function totalsForReport(type: ReportType, reports: ReportsDto) {
-  if (type === "sales") {
-    return [
-      { label: "Sales total", value: formatCurrency(reports.totals.salesTotalCents) },
-      { label: "Rows", value: String(reports.salesRows.length) },
-    ];
-  }
-
-  if (type === "purchases") {
-    return [
-      { label: "Purchase total", value: formatCurrency(reports.totals.purchaseTotalCents) },
-      { label: "Rows", value: String(reports.purchaseRows.length) },
-    ];
-  }
-
-  if (type === "profit") {
-    return [
-      { label: "Revenue", value: formatCurrency(reports.totals.revenueCents) },
-      { label: "Cost", value: formatCurrency(reports.totals.costCents) },
-      { label: "Profit", value: formatCurrency(reports.totals.profitCents) },
-    ];
-  }
-
-  return [
-    { label: "Stock quantity", value: String(reports.totals.stockQuantity) },
-    { label: "Inventory value", value: formatCurrency(reports.totals.inventoryValueCents) },
-    { label: "Stock lines", value: String(reports.stockRows.length) },
-  ];
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Sales report</title><style>
+    @page{size:A4 landscape;margin:10mm}
+    body{font-family:Arial,Helvetica,sans-serif;margin:12px;font-size:11px;color:#0f172a}
+    table{border-collapse:collapse;width:100%;margin-top:10px}
+    th,td{border:1px solid #94a3b8;padding:4px 6px;text-align:left;vertical-align:top}
+    th{background:#f1f5f9}.num{text-align:right;white-space:nowrap}.sub{font-size:10px;color:#64748b}
+    tfoot td{font-weight:700;background:#e2e8f0}
+  </style></head><body><h2>Sales report</h2><div>${escapeHtml(period)}</div>
+  <table><thead><tr><th>Date</th><th>Bill</th><th>Customer</th><th>Job name</th>${workKinds.map((kind) => `<th class="num">${escapeHtml(workLabels[kind])}</th>`).join("")}<th class="num">Grand Total</th></tr></thead>
+  <tbody>${rows}</tbody><tfoot><tr><td colspan="4">Total — ${report.billCount} bills, ${report.jobCount} jobs</td>${workKinds
+    .map((kind) => `<td class="num">${escapeHtml(formatAmountOrBlank(report.workTotals[kind]))}</td>`)
+    .join("")}<td class="num">${escapeHtml(formatAmount(report.salesTotalCents))}</td></tr></tfoot></table></body></html>`;
 }
 
 export default function ReportsScreen() {
-  const [reports, setReports] = useState<ReportsDto | null>(null);
-  const [activeReport, setActiveReport] = useState<ReportType>("sales");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const [startDate, setStartDate] = useState(() => firstDayOfMonthInputValue());
+  const [endDate, setEndDate] = useState(() => toDayInputValue());
+  const [customerId, setCustomerId] = useState<number | null>(null);
+  const [customers, setCustomers] = useState<ContactDto[]>([]);
+  const [report, setReport] = useState<ReportsDto | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const loadReport = useCallback(async () => {
+    setError(null);
+
+    try {
+      setReport(await window.stylecraft.reports.getReports({ startDate: startDate || null, endDate: endDate || null, customerId }));
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Could not load the report.");
+    }
+  }, [startDate, endDate, customerId]);
+
   useEffect(() => {
-    async function loadReports() {
-      setIsLoading(true);
-      setError(null);
+    void loadReport();
+  }, [loadReport]);
 
-      const filters: ReportFilters = {};
+  useEffect(() => {
+    window.stylecraft.contacts
+      .listCustomers()
+      .then(setCustomers)
+      .catch(() => setCustomers([]));
+  }, []);
 
-      if (startDate) {
-        filters.startDate = startDate;
-      }
-
-      if (endDate) {
-        filters.endDate = endDate;
-      }
-
-      try {
-        setReports(await window.stylecraft.reports.getReports(filters));
-      } catch (caughtError) {
-        setError(caughtError instanceof Error ? caughtError.message : "Could not load reports.");
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    void loadReports();
-  }, [startDate, endDate]);
-
-  const tableReport = reports === null ? null : getTableReport(activeReport, reports);
-
-  function handleCsvExport() {
-    if (tableReport !== null) {
-      downloadCsv(tableReport);
-    }
-  }
-
-  function handlePdfExport() {
-    if (tableReport !== null) {
-      try {
-        printReport(tableReport);
-      } catch (caughtError) {
-        setError(caughtError instanceof Error ? caughtError.message : "Could not open PDF export.");
-      }
-    }
-  }
+  const period = `${startDate ? formatDate(new Date(`${startDate}T00:00:00`)) : "Beginning"} to ${endDate ? formatDate(new Date(`${endDate}T00:00:00`)) : "today"}`;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Milestone 7 reports and exports</p>
-          <h2 className="mt-1 text-3xl font-bold tracking-tight">Reports</h2>
-          <p className="mt-2 max-w-2xl text-slate-600 dark:text-slate-300">Review sales, purchases, profit, and current stock with exportable tables.</p>
-        </div>
-      </div>
+      <ScreenHeader kicker="Reports" title="Sales report">
+        Every job sold in the period, what each kind of work earned, and how much was received. Export to Excel (CSV) or print.
+      </ScreenHeader>
 
-      {error ? (
-        <div className="rounded-2xl border border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-950/30 px-4 py-3 text-sm font-medium text-red-700 dark:text-red-300" role="alert">
-          {error}
-        </div>
-      ) : null}
+      {error ? <ErrorBanner>{error}</ErrorBanner> : null}
 
-      <div className="grid gap-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4 md:grid-cols-[1fr_1fr_auto]">
-        <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="reports-start-date">
-          Start date
-          <input
-            className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-            id="reports-start-date"
-            onChange={(event) => setStartDate(event.target.value)}
-            type="date"
-            value={startDate}
-          />
+      <div className="grid gap-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4 md:grid-cols-4">
+        <label className={labelClass} htmlFor="report-start">
+          From date
+          <input className={inputClass} id="report-start" onChange={(event) => setStartDate(event.target.value)} type="date" value={startDate} />
         </label>
-        <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="reports-end-date">
-          End date
-          <input
-            className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-            id="reports-end-date"
-            onChange={(event) => setEndDate(event.target.value)}
-            type="date"
-            value={endDate}
-          />
+        <label className={labelClass} htmlFor="report-end">
+          To date
+          <input className={inputClass} id="report-end" onChange={(event) => setEndDate(event.target.value)} type="date" value={endDate} />
         </label>
-        <div className="flex items-end">
+        <CustomerPicker allowAll customers={customers} id="report-customer" onChange={setCustomerId} value={customerId} />
+        <div className="flex items-end gap-2">
           <Button
+            className="gap-2"
+            disabled={report === null || report.rows.length === 0}
+            onClick={() => report && downloadCsv(`sales-report-${startDate || "all"}-to-${endDate || "today"}.csv`, buildSalesCsv(report))}
+            type="button"
+          >
+            <Download className="h-4 w-4" aria-hidden="true" />
+            Excel CSV
+          </Button>
+          <Button
+            className="gap-2"
+            disabled={report === null}
             onClick={() => {
-              setStartDate("");
-              setEndDate("");
+              try {
+                if (report) {
+                  printDocumentHtml(buildReportHtml(report, period));
+                }
+              } catch (caughtError) {
+                setError(caughtError instanceof Error ? caughtError.message : "Could not open the print window.");
+              }
             }}
             type="button"
             variant="ghost"
           >
-            Clear dates
+            <Printer className="h-4 w-4" aria-hidden="true" />
+            Print
           </Button>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {reportTypes.map((reportType) => (
-          <Button key={reportType.id} onClick={() => setActiveReport(reportType.id)} type="button" variant={activeReport === reportType.id ? "default" : "ghost"}>
-            {reportType.label}
-          </Button>
-        ))}
-      </div>
-
-      {isLoading || reports === null || tableReport === null ? (
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-5 text-sm text-slate-500 dark:text-slate-400">Loading reports...</div>
-      ) : (
+      {report ? (
         <>
-          <div className="grid gap-4 md:grid-cols-3">
-            {totalsForReport(activeReport, reports).map((total) => (
-              <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm" key={total.label}>
-                <div className="text-sm font-medium text-slate-500 dark:text-slate-400">{total.label}</div>
-                <div className="mt-2 text-2xl font-bold text-slate-950 dark:text-slate-50">{total.value}</div>
+          <div className="grid gap-3 md:grid-cols-4">
+            <SummaryCard label="Sales" value={formatCurrency(report.salesTotalCents)} detail={`${report.billCount} bills · ${report.jobCount} jobs`} />
+            <SummaryCard label="Received" value={formatCurrency(report.receivedCents)} detail="Payments in this period" />
+            <SummaryCard label="Difference" value={formatCurrency(report.salesTotalCents - report.receivedCents)} detail="Sales minus received" />
+            <SummaryCard label="Period" value={period} detail={customerId ? (customers.find((customer) => customer.id === customerId)?.name ?? "") : "All customers"} />
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-5">
+            {workKinds.map((kind) => (
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-700 p-4" key={kind}>
+                <div className="text-sm text-slate-500 dark:text-slate-400">{workLabels[kind]}</div>
+                <div className="mt-1 text-lg font-bold text-slate-950 dark:text-slate-50" data-testid={`work-total-${kind}`}>
+                  {formatCurrency(report.workTotals[kind])}
+                </div>
               </div>
             ))}
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
-            <div className="flex flex-col gap-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-3 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-blue-600 dark:text-blue-400" aria-hidden="true" />
-                <h3 className="font-semibold text-slate-950 dark:text-slate-50">{tableReport.title}</h3>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={handleCsvExport} size="sm" type="button" variant="ghost">
-                  <Download className="mr-2 h-4 w-4" aria-hidden="true" />
-                  Export Excel CSV
-                </Button>
-                <Button onClick={handlePdfExport} size="sm" type="button" variant="ghost">
-                  <Printer className="mr-2 h-4 w-4" aria-hidden="true" />
-                  Print / Save PDF
-                </Button>
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700 text-left text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-slate-50 dark:bg-slate-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                <tr>
+                  <th className="px-2 py-2 font-semibold">Date</th>
+                  <th className="px-2 py-2 font-semibold">Bill</th>
+                  <th className="px-2 py-2 font-semibold">Customer</th>
+                  <th className="px-2 py-2 font-semibold">Job name</th>
+                  {workKinds.map((kind) => (
+                    <th className="px-2 py-2 text-right font-semibold" key={kind}>
+                      {workLabels[kind]}
+                    </th>
+                  ))}
+                  <th className="px-2 py-2 text-right font-semibold">Grand Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {report.rows.length === 0 ? (
                   <tr>
-                    {tableReport.columns.map((column) => (
-                      <th className="px-4 py-3 font-semibold" key={column}>
-                        {column}
-                      </th>
-                    ))}
+                    <td className="px-2 py-4 text-slate-500 dark:text-slate-400" colSpan={10}>
+                      No sales in this period.
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
-                  {tableReport.rows.length === 0 ? (
-                    <tr>
-                      <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={tableReport.columns.length}>
-                        No rows match these filters.
-                      </td>
+                ) : (
+                  report.rows.map((row, index) => (
+                    <tr key={`${row.saleId}-${index}`}>
+                      <td className="whitespace-nowrap px-2 py-2">{formatDate(row.saleDate)}</td>
+                      <td className="px-2 py-2">{row.billNumber}</td>
+                      <td className="px-2 py-2">{row.customerName}</td>
+                      <td className="px-2 py-2 font-medium text-slate-950 dark:text-slate-50">{row.jobName}</td>
+                      {workKinds.map((kind) => (
+                        <WorkCell charge={row[kind]} key={kind} />
+                      ))}
+                      <td className="px-2 py-2 text-right font-semibold">{formatAmount(row.totalAmountCents)}</td>
                     </tr>
-                  ) : (
-                    tableReport.rows.map((row, rowIndex) => (
-                      <tr key={rowIndex}>
-                        {row.map((value, columnIndex) => (
-                          <td className="px-4 py-4 text-slate-600 dark:text-slate-300" key={`${rowIndex}-${columnIndex}`}>
-                            {value}
-                          </td>
-                        ))}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </>
-      )}
+      ) : null}
+    </div>
+  );
+}
+
+function SummaryCard({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 p-4">
+      <div className="text-sm text-slate-500 dark:text-slate-400">{label}</div>
+      <div className="mt-1 text-lg font-bold text-slate-950 dark:text-slate-50">{value}</div>
+      <div className="text-xs text-slate-500 dark:text-slate-400">{detail}</div>
     </div>
   );
 }

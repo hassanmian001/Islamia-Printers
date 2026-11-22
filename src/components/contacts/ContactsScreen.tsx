@@ -4,8 +4,6 @@ import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/currency";
 import type { ContactDto, ContactInput } from "@/types/stylecraft-api";
 
-type ContactKind = "customers" | "suppliers";
-
 type ContactFormState = {
   name: string;
   phone: string;
@@ -51,7 +49,7 @@ function buildContactInput(form: ContactFormState): { input?: ContactInput; erro
   const name = form.name.trim();
 
   if (!name) {
-    return { error: "Contact name is required." };
+    return { error: "Customer name is required." };
   }
 
   const openingBalanceCents = form.openingBalance.trim() ? decimalStringToCents(form.openingBalance) : 0;
@@ -85,9 +83,7 @@ function matchesSearch(contact: ContactDto, search: string) {
 }
 
 export default function ContactsScreen() {
-  const [activeKind, setActiveKind] = useState<ContactKind>("customers");
   const [customers, setCustomers] = useState<ContactDto[]>([]);
-  const [suppliers, setSuppliers] = useState<ContactDto[]>([]);
   const [form, setForm] = useState<ContactFormState>(() => makeEmptyForm());
   const [editingContact, setEditingContact] = useState<ContactDto | null>(null);
   const [search, setSearch] = useState("");
@@ -99,15 +95,9 @@ export default function ContactsScreen() {
     setError(null);
 
     try {
-      const [loadedCustomers, loadedSuppliers] = await Promise.all([
-        window.stylecraft.contacts.listCustomers(),
-        window.stylecraft.contacts.listSuppliers(),
-      ]);
-
-      setCustomers(loadedCustomers);
-      setSuppliers(loadedSuppliers);
+      setCustomers(await window.stylecraft.contacts.listCustomers());
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Could not load contacts.");
+      setError(caughtError instanceof Error ? caughtError.message : "Could not load customers.");
     } finally {
       setIsLoading(false);
     }
@@ -120,11 +110,6 @@ export default function ContactsScreen() {
   function resetForm() {
     setForm(makeEmptyForm());
     setEditingContact(null);
-  }
-
-  function selectKind(kind: ContactKind) {
-    setActiveKind(kind);
-    resetForm();
   }
 
   function startEditing(contact: ContactDto) {
@@ -144,41 +129,54 @@ export default function ContactsScreen() {
     }
 
     try {
-      if (activeKind === "customers") {
-        if (editingContact) {
-          await window.stylecraft.contacts.updateCustomer(editingContact.id, input);
-        } else {
-          await window.stylecraft.contacts.createCustomer(input);
-        }
-      } else if (editingContact) {
-        await window.stylecraft.contacts.updateSupplier(editingContact.id, input);
+      if (editingContact) {
+        await window.stylecraft.contacts.updateCustomer(editingContact.id, input);
       } else {
-        await window.stylecraft.contacts.createSupplier(input);
+        await window.stylecraft.contacts.createCustomer(input);
       }
 
       resetForm();
       await loadContacts();
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Could not save contact.");
+      setError(caughtError instanceof Error ? caughtError.message : "Could not save customer.");
     }
   }
 
-  const activeContacts = activeKind === "customers" ? customers : suppliers;
-  const filteredContacts = activeContacts.filter((contact) => matchesSearch(contact, search));
-  const activeLabel = activeKind === "customers" ? "Customer" : "Supplier";
+  async function handleDelete(contact: ContactDto) {
+    setError(null);
+
+    if (!window.confirm(`Delete ${contact.name}? This only works for a customer with no bills or payments.`)) {
+      return;
+    }
+
+    try {
+      await window.stylecraft.contacts.deleteCustomer(contact.id);
+
+      if (editingContact?.id === contact.id) {
+        resetForm();
+      }
+
+      await loadContacts();
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Could not delete customer.");
+    }
+  }
+
+  const filteredContacts = customers.filter((contact) => matchesSearch(contact, search));
+  const activeLabel = "Customer";
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Contact management</p>
-          <h2 className="mt-1 text-3xl font-bold tracking-tight">Customers & suppliers</h2>
+          <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Khata accounts</p>
+          <h2 className="mt-1 text-3xl font-bold tracking-tight">Customers</h2>
           <p className="mt-2 max-w-2xl text-slate-600 dark:text-slate-300">
-            Keep contact details available for repeat sales and supplier purchases without changing transaction history.
+            Every customer has their own khata. Old udhaar from before this software goes in as the opening balance.
           </p>
         </div>
         <div className="rounded-2xl bg-blue-50 dark:bg-blue-950/40 px-4 py-3 text-sm text-blue-700">
-          <span className="font-semibold">{customers.length}</span> customers · <span className="font-semibold">{suppliers.length}</span> suppliers
+          <span className="font-semibold">{customers.length}</span> customers
         </div>
       </div>
 
@@ -187,15 +185,6 @@ export default function ContactsScreen() {
           {error}
         </div>
       ) : null}
-
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={() => selectKind("customers")} type="button" variant={activeKind === "customers" ? "default" : "ghost"}>
-          Customers
-        </Button>
-        <Button onClick={() => selectKind("suppliers")} type="button" variant={activeKind === "suppliers" ? "default" : "ghost"}>
-          Suppliers
-        </Button>
-      </div>
 
       <form className="grid gap-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4" noValidate onSubmit={handleSubmit}>
         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
@@ -264,9 +253,7 @@ export default function ContactsScreen() {
               value={form.openingBalance}
             />
             <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
-              {activeKind === "customers"
-                ? "Old udhaar this customer already owed before this software. Use a minus figure for money paid in advance."
-                : "What the shop already owed this supplier before this software. Use a minus figure for an advance already paid."}
+              Old udhaar this customer already owed before this software. Use a minus figure for money paid in advance.
             </span>
           </label>
         </div>
@@ -290,7 +277,7 @@ export default function ContactsScreen() {
 
       <div className="space-y-3">
         <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="contact-search">
-          Search {activeKind}
+          Search customers
           <input
             className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
             id="contact-search"
@@ -303,7 +290,7 @@ export default function ContactsScreen() {
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
         <div className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
-          <h3 className="font-semibold text-slate-950 dark:text-slate-50">{activeKind === "customers" ? "Customer directory" : "Supplier directory"}</h3>
+          <h3 className="font-semibold text-slate-950 dark:text-slate-50">Customer directory</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700 text-left text-sm">
@@ -322,13 +309,13 @@ export default function ContactsScreen() {
               {isLoading ? (
                 <tr>
                   <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={7}>
-                    Loading contacts...
+                    Loading customers...
                   </td>
                 </tr>
               ) : filteredContacts.length === 0 ? (
                 <tr>
                   <td className="px-4 py-5 text-slate-500 dark:text-slate-400" colSpan={7}>
-                    No {activeKind} found.
+                    No customers found.
                   </td>
                 </tr>
               ) : (
@@ -343,9 +330,14 @@ export default function ContactsScreen() {
                     </td>
                     <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{contact.notes ?? "-"}</td>
                     <td className="px-4 py-4">
-                      <Button onClick={() => startEditing(contact)} type="button" variant="ghost">
-                        Edit
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button onClick={() => startEditing(contact)} type="button" variant="ghost">
+                          Edit
+                        </Button>
+                        <Button onClick={() => void handleDelete(contact)} type="button" variant="ghost">
+                          Delete
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))

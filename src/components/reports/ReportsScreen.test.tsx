@@ -5,169 +5,92 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import ReportsScreen from "./ReportsScreen";
-import type { BackupApi, DashboardApi, InvoiceApi, ProductApi, PurchaseApi, ReportsApi, ReportsDto, SalesApi } from "@/types/stylecraft-api";
+import ReportsScreen, { buildSalesCsv } from "./ReportsScreen";
+import { charge, createMockApi, customer } from "@/test/mock-api";
+import type { ReportsDto, StyleCraftApi } from "@/types/stylecraft-api";
 
-const sampleReports: ReportsDto = {
+const none = charge(0, 0);
+
+const report: ReportsDto = {
   filters: {},
-  salesRows: [
-    {
-      id: 1,
-      invoiceNumber: "INV-000001",
-      saleDate: new Date("2026-07-09T00:00:00.000Z"),
-      customerName: "Jane Buyer",
-      itemCount: 2,
-      subtotalCents: 6000,
-      discountAmountCents: 100,
-      totalAmountCents: 5900,
-      profitAmountCents: 1900,
-      paymentMethod: "Cash",
-      notes: "Included sale",
-    },
-  ],
-  purchaseRows: [
-    {
-      id: 1,
-      purchaseDate: new Date("2026-07-09T00:00:00.000Z"),
-      supplierName: "Fabric House",
-      itemCount: 2,
-      totalAmountCents: 8000,
-      notes: "Included purchase",
-    },
-  ],
-  profitRows: [
+  rows: [
     {
       saleId: 1,
-      invoiceNumber: "INV-000001",
-      saleDate: new Date("2026-07-09T00:00:00.000Z"),
-      customerName: "Jane Buyer",
-      revenueCents: 5900,
-      costCents: 4000,
-      discountAmountCents: 100,
-      profitAmountCents: 1900,
+      billNumber: 15,
+      saleDate: new Date("2026-11-01T00:00:00"),
+      customerName: "Islamia Press",
+      jobName: "Visiting cards",
+      rota: charge(1000, 200),
+      gto: none,
+      cutting: charge(1, 5_000),
+      lamination: none,
+      dye: none,
+      totalAmountCents: 205_000,
     },
-  ],
-  stockRows: [
     {
-      productId: 1,
-      name: "Oxford Shirt",
-      sku: "SHIRT",
-      categoryName: "Apparel",
-      currentStock: 7,
-      lowStockThreshold: 2,
-      purchasePriceCents: 1000,
-      sellingPriceCents: 1500,
-      inventoryValueCents: 7000,
-      isLowStock: false,
-      isActive: true,
+      saleId: 2,
+      billNumber: 16,
+      saleDate: new Date("2026-11-05T00:00:00"),
+      customerName: "Al Noor, Sons",
+      jobName: "Boxes",
+      rota: none,
+      gto: none,
+      cutting: none,
+      lamination: charge(100, 200),
+      dye: charge(3, 25_000),
+      totalAmountCents: 95_000,
     },
   ],
-  totals: {
-    salesTotalCents: 5900,
-    purchaseTotalCents: 8000,
-    revenueCents: 5900,
-    costCents: 4000,
-    discountCents: 100,
-    profitCents: 1900,
-    stockQuantity: 7,
-    inventoryValueCents: 7000,
-  },
+  workTotals: { rota: 200_000, gto: 0, cutting: 5_000, lamination: 20_000, dye: 75_000 },
+  salesTotalCents: 300_000,
+  billCount: 2,
+  jobCount: 2,
+  receivedCents: 100_000,
 };
 
 describe("ReportsScreen", () => {
-  let dashboardApi: DashboardApi;
-  let productsApi: ProductApi;
-  let purchasesApi: PurchaseApi;
-  let reportsApi: ReportsApi;
-  let salesApi: SalesApi;
-  let invoicesApi: InvoiceApi;
-  let backupApi: BackupApi;
-  let createObjectUrl: ReturnType<typeof vi.fn>;
-  let revokeObjectUrl: ReturnType<typeof vi.fn>;
-  let openedWindow: { document: { write: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> }; focus: ReturnType<typeof vi.fn>; print: ReturnType<typeof vi.fn> };
+  let api: StyleCraftApi;
+
+  beforeEach(() => {
+    api = createMockApi({
+      reports: { getReports: vi.fn().mockResolvedValue(report) },
+      contacts: { listCustomers: vi.fn().mockResolvedValue([customer()]) },
+    });
+    window.stylecraft = api;
+  });
 
   afterEach(() => {
     cleanup();
-    vi.restoreAllMocks();
   });
 
-  beforeEach(() => {
-    dashboardApi = { getSummary: vi.fn().mockResolvedValue({}) } as unknown as DashboardApi;
-    productsApi = {
-      list: vi.fn().mockResolvedValue([]),
-      create: vi.fn().mockResolvedValue({}),
-      update: vi.fn().mockResolvedValue({}),
-      markInactive: vi.fn().mockResolvedValue({}),
-    } as unknown as ProductApi;
-    purchasesApi = {
-      list: vi.fn().mockResolvedValue([]),
-      create: vi.fn().mockResolvedValue({}),
-      listSuppliers: vi.fn().mockResolvedValue([]),
-      createSupplier: vi.fn().mockResolvedValue({}),
-    } as unknown as PurchaseApi;
-    reportsApi = {
-      getReports: vi.fn().mockResolvedValue(sampleReports),
-    };
-    salesApi = {
-      list: vi.fn().mockResolvedValue([]),
-      create: vi.fn().mockResolvedValue({}),
-      listCustomers: vi.fn().mockResolvedValue([]),
-      createCustomer: vi.fn().mockResolvedValue({}),
-    } as unknown as SalesApi;
-    backupApi = { getSettings: vi.fn(), updateLocation: vi.fn(), create: vi.fn(), restore: vi.fn(), chooseDirectory: vi.fn(), chooseFile: vi.fn() } as unknown as BackupApi;
-    invoicesApi = { getBySaleId: vi.fn().mockResolvedValue({}) } as unknown as InvoiceApi;
-    createObjectUrl = vi.fn().mockReturnValue("blob:reports");
-    revokeObjectUrl = vi.fn();
-    openedWindow = { document: { write: vi.fn(), close: vi.fn() }, focus: vi.fn(), print: vi.fn() };
-
-    Object.defineProperty(window.URL, "createObjectURL", { configurable: true, value: createObjectUrl });
-    Object.defineProperty(window.URL, "revokeObjectURL", { configurable: true, value: revokeObjectUrl });
-    vi.spyOn(window, "open").mockReturnValue(openedWindow as unknown as Window);
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
-
-    window.stylecraft = { backup: backupApi, dashboard: dashboardApi, invoices: invoicesApi, products: productsApi, purchases: purchasesApi, reports: reportsApi, sales: salesApi, settings: {} as never, update: {} as never };
-  });
-
-  it("renders sales report data from the API", async () => {
+  it("shows every job sold with totals per kind of work", async () => {
     render(<ReportsScreen />);
 
-    expect(await screen.findByText("Sales Report")).toBeInTheDocument();
-    expect(screen.getByText("INV-000001")).toBeInTheDocument();
-    expect(screen.getByText("Jane Buyer")).toBeInTheDocument();
-    expect(screen.getAllByText("Rs. 59.00").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Rs. 19.00").length).toBeGreaterThan(0);
+    expect(await screen.findByText("Visiting cards")).toBeInTheDocument();
+    expect(screen.getByText("Boxes")).toBeInTheDocument();
+    expect(screen.getByText("Rs. 3,000.00")).toBeInTheDocument();
+    expect(screen.getByText("2 bills · 2 jobs")).toBeInTheDocument();
+    expect(screen.getByTestId("work-total-rota")).toHaveTextContent("Rs. 2,000.00");
+    expect(screen.getByTestId("work-total-dye")).toHaveTextContent("Rs. 750.00");
   });
 
-  it("reloads reports when date filters change", async () => {
+  it("reloads for a new date range", async () => {
     render(<ReportsScreen />);
+    await screen.findByText("Visiting cards");
 
-    await screen.findByText("Sales Report");
-    fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-07-01" } });
-    fireEvent.change(screen.getByLabelText("End date"), { target: { value: "2026-07-31" } });
+    fireEvent.change(screen.getByLabelText("From date"), { target: { value: "2026-10-01" } });
 
-    await waitFor(() => {
-      expect(reportsApi.getReports).toHaveBeenLastCalledWith({ startDate: "2026-07-01", endDate: "2026-07-31" });
-    });
+    await waitFor(() => expect(api.reports.getReports).toHaveBeenLastCalledWith(expect.objectContaining({ startDate: "2026-10-01" })));
   });
 
-  it("exports the active report as CSV", async () => {
-    render(<ReportsScreen />);
+  it("exports one CSV line per job with qty, rate and amount for each kind of work", () => {
+    const lines = buildSalesCsv(report).split("\n");
 
-    await screen.findByText("Sales Report");
-    fireEvent.click(screen.getByRole("button", { name: /Export Excel CSV/ }));
-
-    expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob));
-    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:reports");
-  });
-
-  it("opens a printable report window for PDF export", async () => {
-    render(<ReportsScreen />);
-
-    await screen.findByText("Sales Report");
-    fireEvent.click(screen.getByRole("button", { name: /Print \/ Save PDF/ }));
-
-    expect(window.open).toHaveBeenCalled();
-    expect(openedWindow.document.write).toHaveBeenCalledWith(expect.stringContaining("Sales Report"));
-    expect(openedWindow.print).toHaveBeenCalled();
+    expect(lines[0]).toBe(
+      "Date,Bill No,Customer,Job name,Rota P qty,Rota P rate,Rota P amount,GTO P qty,GTO P rate,GTO P amount,Cutting qty,Cutting rate,Cutting amount,Lamination qty,Lamination rate,Lamination amount,Dye qty,Dye rate,Dye amount,Grand Total",
+    );
+    expect(lines[1]).toBe("01/11/2026,15,Islamia Press,Visiting cards,1000,2.00,2000.00,0,0.00,0.00,1,50.00,50.00,0,0.00,0.00,0,0.00,0.00,2050.00");
+    expect(lines[2]).toContain('"Al Noor, Sons"');
+    expect(lines[3]).toBe(",,,Total,,,2000.00,,,0.00,,,50.00,,,200.00,,,750.00,3000.00");
   });
 });

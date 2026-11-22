@@ -1,14 +1,13 @@
-import { eq } from "drizzle-orm";
+import Database from "better-sqlite3";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createDb } from "./client";
+import type { SaleInput, SaleJobInput } from "../src/types/stylecraft-api";
+import { createCustomer } from "./contacts-service";
 import { runMigrations } from "./migrate";
-import { createProduct, markProductInactive, type ProductInput } from "./products-service";
-import { createCustomer, createSale, listCustomers, listSales, SaleValidationError, type SaleInput } from "./sales-service";
-import { products, saleItems, sales, stockMovements } from "./schema";
+import { createSale, deleteSale, getNextBillNumber, getSale, listSales, SaleValidationError, updateSale } from "./sales-service";
 
 const tempDirs: string[] = [];
 
@@ -19,230 +18,170 @@ afterEach(() => {
 });
 
 function makeTempDatabasePath() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stylecraft-sales-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "islamia-sales-"));
   tempDirs.push(dir);
   const databasePath = path.join(dir, "test.sqlite");
   runMigrations(databasePath);
   return databasePath;
 }
 
-function makeProductInput(overrides: Partial<ProductInput> = {}): ProductInput {
+const none = { qty: 0, rateCents: 0 };
+
+function job(overrides: Partial<SaleJobInput> = {}): SaleJobInput {
+  return { jobName: "Visiting cards", rota: none, gto: none, cutting: none, lamination: none, dye: none, ...overrides };
+}
+
+function saleInput(customerId: number, overrides: Partial<SaleInput> = {}): SaleInput {
   return {
-    name: "Shirt",
-    sku: "A1",
-    categoryName: "Apparel",
-    purchasePriceCents: 1_000,
-    sellingPriceCents: 1_500,
-    currentStock: 5,
-    lowStockThreshold: 2,
-    isActive: true,
+    customerId,
+    saleDate: "2026-11-10",
+    jobs: [
+      job({
+        jobName: "Visiting cards",
+        rota: { qty: 2000, rateCents: 150 }, // 2000 x Rs 1.50 = Rs 3,000
+        cutting: { qty: 1, rateCents: 50_000 }, // Rs 500
+      }),
+      job({
+        jobName: "Letterhead",
+        gto: { qty: 2.5, rateCents: 120_000 }, // 2.5 x Rs 1,200 = Rs 3,000
+        lamination: { qty: 500, rateCents: 200 }, // Rs 1,000
+        dye: { qty: 1, rateCents: 25_000 }, // Rs 250
+      }),
+    ],
     ...overrides,
   };
 }
-
-function makeSaleInput(overrides: Partial<SaleInput> = {}): SaleInput {
-  return {
-    customerName: "Walk-in Customer",
-    saleDate: new Date("2026-07-09T00:00:00.000Z"),
-    paymentMethod: "Cash",
-    notes: "Counter sale",
-    items: [],
-    ...overrides,
-  };
-}
-
-function tableCounts(databasePath: string) {
-  const { sqlite, db } = createDb(databasePath);
-
-  try {
-    return {
-      sales: db.select().from(sales).all().length,
-      saleItems: db.select().from(saleItems).all().length,
-      stockMovements: db.select().from(stockMovements).all().length,
-    };
-  } finally {
-    sqlite.close();
-  }
-}
-
-describe("sales service validation", () => {
-  it("rejects invalid quantity, price, discount, duplicate products, missing products, and inactive products", () => {
-    const databasePath = makeTempDatabasePath();
-    const product = createProduct(databasePath, makeProductInput({ sku: "VALID" }));
-    const inactiveProduct = createProduct(databasePath, makeProductInput({ sku: "INACTIVE" }));
-    markProductInactive(databasePath, inactiveProduct.id);
-
-    expect(() => createSale(databasePath, makeSaleInput({ items: [{ variantId: product.variants[0].id, quantity: 0, unitPriceCents: 100 }] }))).toThrow(
-      SaleValidationError,
-    );
-    expect(() => createSale(databasePath, makeSaleInput({ items: [{ variantId: product.variants[0].id, quantity: 1, unitPriceCents: -1 }] }))).toThrow(
-      SaleValidationError,
-    );
-    expect(() =>
-      createSale(databasePath, makeSaleInput({ items: [{ variantId: product.variants[0].id, quantity: 1, unitPriceCents: 100, discountAmountCents: 101 }] })),
-    ).toThrow(SaleValidationError);
-    expect(() =>
-      createSale(
-        databasePath,
-        makeSaleInput({
-          items: [
-            { variantId: product.variants[0].id, quantity: 1, unitPriceCents: 100 },
-            { variantId: product.variants[0].id, quantity: 2, unitPriceCents: 100 },
-          ],
-        }),
-      ),
-    ).toThrow(SaleValidationError);
-    expect(() => createSale(databasePath, makeSaleInput({ items: [{ variantId: 9999, quantity: 1, unitPriceCents: 100 }] }))).toThrow(
-      SaleValidationError,
-    );
-    expect(() => createSale(databasePath, makeSaleInput({ items: [{ variantId: inactiveProduct.variants[0].id, quantity: 1, unitPriceCents: 100 }] }))).toThrow(
-      SaleValidationError,
-    );
-  });
-});
 
 describe("sales service", () => {
-  it("creates a single-item sale, decreases stock, records movement, and calculates profit", () => {
+  it("records a bill with each kind of work charged as quantity x rate", () => {
     const databasePath = makeTempDatabasePath();
-    const product = createProduct(databasePath, makeProductInput({ sku: "SALE-1", currentStock: 5, purchasePriceCents: 1_000 }));
+    const customer = createCustomer(databasePath, { name: "Al Noor Traders" });
 
-    const sale = createSale(
-      databasePath,
-      makeSaleInput({ items: [{ variantId: product.variants[0].id, quantity: 2, unitPriceCents: 1_500, discountAmountCents: 200 }] }),
-    );
+    const sale = createSale(databasePath, saleInput(customer.id));
 
-    expect(sale).toMatchObject({
-      invoiceNumber: "INV-000001",
-      customerName: "Walk-in Customer",
-      subtotalCents: 3_000,
-      discountAmountCents: 200,
-      totalAmountCents: 2_800,
-      profitAmountCents: 800,
-      paymentMethod: "Cash",
-      items: [
-        {
-          productId: product.id,
-          productName: "Shirt",
-          productSku: "SALE-1",
-          quantity: 2,
-          unitPriceCents: 1_500,
-          unitCostCents: 1_000,
-          discountAmountCents: 200,
-          totalAmountCents: 2_800,
-          profitAmountCents: 800,
-        },
-      ],
+    expect(sale.billNumber).toBe(1);
+    expect(sale.customerName).toBe("Al Noor Traders");
+    expect(sale.jobs.map((entry) => entry.jobName)).toEqual(["Visiting cards", "Letterhead"]);
+    expect(sale.jobs[0]).toMatchObject({
+      rota: { qty: 2000, rateCents: 150, amountCents: 300_000 },
+      gto: { qty: 0, rateCents: 0, amountCents: 0 },
+      cutting: { qty: 1, rateCents: 50_000, amountCents: 50_000 },
+      totalAmountCents: 350_000,
     });
-
-    const { sqlite, db } = createDb(databasePath);
-
-    try {
-      const updatedProduct = db.select().from(products).where(eq(products.id, product.id)).get();
-      const movement = db.select().from(stockMovements).where(eq(stockMovements.referenceId, sale.id)).get();
-
-      expect(updatedProduct?.currentStock).toBe(3);
-      expect(movement).toMatchObject({
-        productId: product.id,
-        movementType: "sale",
-        referenceType: "sale",
-        quantityChange: -2,
-        stockBefore: 5,
-        stockAfter: 3,
-      });
-    } finally {
-      sqlite.close();
-    }
+    expect(sale.jobs[1]).toMatchObject({
+      gto: { qty: 2.5, rateCents: 120_000, amountCents: 300_000 },
+      lamination: { amountCents: 100_000 },
+      dye: { amountCents: 25_000 },
+      totalAmountCents: 425_000,
+    });
+    expect(sale.totalAmountCents).toBe(775_000);
+    expect(sale.saleDate.getHours()).toBe(0);
+    expect(sale.saleDate.getDate()).toBe(10);
   });
 
-  it("creates multi-item sales and calculates totals", () => {
+  it("numbers bills one after another", () => {
     const databasePath = makeTempDatabasePath();
-    const shirt = createProduct(databasePath, makeProductInput({ sku: "SHIRT-1", currentStock: 5, purchasePriceCents: 1_000 }));
-    const pants = createProduct(databasePath, makeProductInput({ name: "Pants", sku: "PANTS-1", currentStock: 7, purchasePriceCents: 2_000 }));
+    const customer = createCustomer(databasePath, { name: "Ali" });
 
-    const sale = createSale(
+    expect(getNextBillNumber(databasePath)).toBe(1);
+    createSale(databasePath, saleInput(customer.id));
+    createSale(databasePath, saleInput(customer.id));
+
+    expect(getNextBillNumber(databasePath)).toBe(3);
+    expect(listSales(databasePath).map((sale) => sale.billNumber)).toEqual([2, 1]);
+  });
+
+  it("rounds a fractional amount to the nearest paisa", () => {
+    const databasePath = makeTempDatabasePath();
+    const customer = createCustomer(databasePath, { name: "Ali" });
+
+    const sale = createSale(databasePath, saleInput(customer.id, { jobs: [job({ rota: { qty: 3, rateCents: 33 } , cutting: { qty: 0.333, rateCents: 100 } })] }));
+
+    expect(sale.jobs[0].rota.amountCents).toBe(99);
+    expect(sale.jobs[0].cutting.amountCents).toBe(33);
+    expect(sale.totalAmountCents).toBe(132);
+  });
+
+  it("refuses a bill with no customer, no jobs, a nameless job or a job with nothing charged", () => {
+    const databasePath = makeTempDatabasePath();
+    const customer = createCustomer(databasePath, { name: "Ali" });
+
+    expect(() => createSale(databasePath, saleInput(0))).toThrow(SaleValidationError);
+    expect(() => createSale(databasePath, saleInput(9999))).toThrow("Customer was not found.");
+    expect(() => createSale(databasePath, saleInput(customer.id, { jobs: [] }))).toThrow("Add at least one job");
+    expect(() => createSale(databasePath, saleInput(customer.id, { jobs: [job({ jobName: "  ", rota: { qty: 1, rateCents: 100 } })] }))).toThrow("needs a job name");
+    expect(() => createSale(databasePath, saleInput(customer.id, { jobs: [job()] }))).toThrow("has no charges");
+    expect(() => createSale(databasePath, saleInput(customer.id, { jobs: [job({ rota: { qty: 0, rateCents: 100 } })] }))).toThrow("has a rate but no quantity");
+    expect(() => createSale(databasePath, saleInput(customer.id, { jobs: [job({ rota: { qty: -1, rateCents: 100 } })] }))).toThrow("cannot be negative");
+    expect(() => createSale(databasePath, saleInput(customer.id, { jobs: [job({ rota: { qty: 1, rateCents: 1.5 } })] }))).toThrow("rate must be");
+    expect(listSales(databasePath)).toEqual([]);
+  });
+
+  it("saves nothing when one job of the bill is rejected", () => {
+    const databasePath = makeTempDatabasePath();
+    const customer = createCustomer(databasePath, { name: "Ali" });
+
+    expect(() =>
+      createSale(databasePath, saleInput(customer.id, { jobs: [job({ rota: { qty: 1, rateCents: 100 } }), job({ jobName: "" })] })),
+    ).toThrow(SaleValidationError);
+
+    const sqlite = new Database(databasePath);
+    expect(sqlite.prepare("select count(*) as count from sales").get()).toEqual({ count: 0 });
+    expect(sqlite.prepare("select count(*) as count from sale_jobs").get()).toEqual({ count: 0 });
+    sqlite.close();
+  });
+
+  it("edits a bill in place, keeping its number and leaving a trail", () => {
+    const databasePath = makeTempDatabasePath();
+    const first = createCustomer(databasePath, { name: "Ali" });
+    const second = createCustomer(databasePath, { name: "Bilal" });
+    const sale = createSale(databasePath, saleInput(first.id));
+
+    const updated = updateSale(
       databasePath,
-      makeSaleInput({
-        items: [
-          { variantId: shirt.variants[0].id, quantity: 2, unitPriceCents: 1_500 },
-          { variantId: pants.variants[0].id, quantity: 3, unitPriceCents: 3_000, discountAmountCents: 500 },
-        ],
-      }),
+      sale.id,
+      saleInput(second.id, { saleDate: "2026-11-12", notes: "Rate corrected", jobs: [job({ jobName: "Flyers", rota: { qty: 1000, rateCents: 200 } })] }),
+      "Owner",
     );
 
-    expect(sale.subtotalCents).toBe(12_000);
-    expect(sale.discountAmountCents).toBe(500);
-    expect(sale.totalAmountCents).toBe(11_500);
-    expect(sale.profitAmountCents).toBe(3_500);
+    expect(updated).toMatchObject({ id: sale.id, billNumber: 1, customerId: second.id, totalAmountCents: 200_000, notes: "Rate corrected" });
+    expect(updated.jobs.map((entry) => entry.jobName)).toEqual(["Flyers"]);
 
-    const { sqlite, db } = createDb(databasePath);
-
-    try {
-      expect(db.select().from(products).where(eq(products.id, shirt.id)).get()?.currentStock).toBe(3);
-      expect(db.select().from(products).where(eq(products.id, pants.id)).get()?.currentStock).toBe(4);
-      expect(db.select().from(stockMovements).all()).toHaveLength(2);
-    } finally {
-      sqlite.close();
-    }
+    const sqlite = new Database(databasePath);
+    expect(sqlite.prepare("select count(*) as count from sale_jobs").get()).toEqual({ count: 1 });
+    expect(sqlite.prepare("select action, actor_name as actorName from audit_logs").all()).toEqual([{ action: "sale.updated", actorName: "Owner" }]);
+    sqlite.close();
   });
 
-  it("blocks overselling and rolls back sale rows, item rows, stock movements, and stock changes", () => {
+  it("deletes a bill together with its jobs", () => {
     const databasePath = makeTempDatabasePath();
-    const product = createProduct(databasePath, makeProductInput({ sku: "ROLLBACK-1", currentStock: 5 }));
-    const beforeCounts = tableCounts(databasePath);
+    const customer = createCustomer(databasePath, { name: "Ali" });
+    const sale = createSale(databasePath, saleInput(customer.id));
 
-    expect(() => createSale(databasePath, makeSaleInput({ items: [{ variantId: product.variants[0].id, quantity: 6, unitPriceCents: 1_500 }] }))).toThrow(
-      SaleValidationError,
-    );
+    deleteSale(databasePath, sale.id, "Owner");
 
-    const { sqlite, db } = createDb(databasePath);
+    expect(listSales(databasePath)).toEqual([]);
+    expect(() => getSale(databasePath, sale.id)).toThrow("Bill was not found.");
 
-    try {
-      expect(tableCounts(databasePath)).toEqual(beforeCounts);
-      expect(db.select().from(products).where(eq(products.id, product.id)).get()?.currentStock).toBe(5);
-    } finally {
-      sqlite.close();
-    }
+    const sqlite = new Database(databasePath);
+    expect(sqlite.prepare("select count(*) as count from sale_jobs").get()).toEqual({ count: 0 });
+    expect(sqlite.prepare("select action from audit_logs").all()).toEqual([{ action: "sale.deleted" }]);
+    sqlite.close();
   });
 
-  it("creates and lists customers", () => {
+  it("filters bill history by customer, date range and search text", () => {
     const databasePath = makeTempDatabasePath();
+    const ali = createCustomer(databasePath, { name: "Ali" });
+    const bilal = createCustomer(databasePath, { name: "Bilal" });
 
-    const customer = createCustomer(databasePath, { name: "  Jane Buyer  ", phone: " 555-0102 " });
-    const listedCustomers = listCustomers(databasePath);
+    createSale(databasePath, saleInput(ali.id, { saleDate: "2026-11-01" }));
+    createSale(databasePath, saleInput(bilal.id, { saleDate: "2026-11-15", jobs: [job({ jobName: "Wedding cards", dye: { qty: 1, rateCents: 1000 } })] }));
+    createSale(databasePath, saleInput(ali.id, { saleDate: "2026-11-30" }));
 
-    expect(customer).toMatchObject({ name: "Jane Buyer", phone: "555-0102" });
-    expect(listedCustomers).toHaveLength(1);
-    expect(listedCustomers[0]).toMatchObject({ id: customer.id, name: "Jane Buyer" });
-  });
-
-  it("lists sale history with invoice number, customer name, item count, totals, and profit", () => {
-    const databasePath = makeTempDatabasePath();
-    const shirt = createProduct(databasePath, makeProductInput({ sku: "HISTORY-1", currentStock: 4, purchasePriceCents: 1_000 }));
-    const pants = createProduct(databasePath, makeProductInput({ name: "Pants", sku: "HISTORY-2", currentStock: 4, purchasePriceCents: 1_500 }));
-    const customer = createCustomer(databasePath, { name: "History Customer" });
-
-    const sale = createSale(
-      databasePath,
-      makeSaleInput({
-        customerId: customer.id,
-        customerName: null,
-        items: [
-          { variantId: shirt.variants[0].id, quantity: 1, unitPriceCents: 1_500 },
-          { variantId: pants.variants[0].id, quantity: 2, unitPriceCents: 2_500 },
-        ],
-      }),
-    );
-
-    expect(listSales(databasePath)).toEqual([
-      expect.objectContaining({
-        id: sale.id,
-        invoiceNumber: "INV-000001",
-        customerId: customer.id,
-        customerName: "History Customer",
-        itemCount: 2,
-        totalAmountCents: 6_500,
-        profitAmountCents: 2_500,
-      }),
-    ]);
+    expect(listSales(databasePath, { customerId: ali.id }).map((sale) => sale.billNumber)).toEqual([3, 1]);
+    expect(listSales(databasePath, { startDate: "2026-11-15", endDate: "2026-11-30" }).map((sale) => sale.billNumber)).toEqual([3, 2]);
+    expect(listSales(databasePath, { endDate: "2026-11-01" }).map((sale) => sale.billNumber)).toEqual([1]);
+    expect(listSales(databasePath, { search: "wedding" }).map((sale) => sale.billNumber)).toEqual([2]);
+    expect(listSales(databasePath, { search: "bilal" })[0]).toMatchObject({ jobCount: 1, jobNames: ["Wedding cards"] });
   });
 });
