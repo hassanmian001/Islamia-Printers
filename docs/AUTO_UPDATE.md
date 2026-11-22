@@ -58,9 +58,17 @@ npm version patch -m "Release v%s"
 #    "Published releases must have a valid tag"
 git push && git push --tags
 
-# 3. build + publish
-npm run release
+# 3. build + publish -- ab ye GitHub khud karta hai (neeche dekhein)
 ```
+
+**Installer ab GitHub Actions banata hai** ([.github/workflows/release.yml](../.github/workflows/release.yml)).
+Tag push hote hi GitHub ka Windows server tests chalata hai, installer banata hai aur
+release par upload kar deta hai. Progress: repo ka **Actions** tab.
+
+Shop ke PC par `npm run release` ab nahi chalta: Windows ka Smart App Control
+electron-builder ke unsigned helper exe ko block kar deta hai ("spawn UNKNOWN").
+Kisi purane tag ka installer dobara banana ho to Actions > Release > **Run workflow**
+mein tag likhein (jaise `v1.0.0`).
 
 `npm version` chalane se pehle working tree clean hona chahiye (sab kuch commit ho).
 

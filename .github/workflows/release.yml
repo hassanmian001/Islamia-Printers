@@ -1,0 +1,50 @@
+# Builds the Windows installer and uploads it to the GitHub Release for a tag.
+#
+# Runs on GitHub's Windows machine rather than the shop PC, because Smart App
+# Control there blocks the unsigned helper electron-builder runs while making
+# the NSIS installer.
+#
+# Routine: `npm version patch -m "Release v%s"`, then `git push && git push --tags`.
+# The tag push starts this workflow. To rebuild a tag that already exists, run it
+# from the Actions tab (Run workflow) and type the tag, e.g. v1.0.0.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and publish, e.g. v1.0.0"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Build and publish installer
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
