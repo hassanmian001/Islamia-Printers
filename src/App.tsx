@@ -9,7 +9,7 @@ import ReportsScreen from "@/components/reports/ReportsScreen";
 import SalesScreen from "@/components/sales/SalesScreen";
 import SettingsScreen from "@/components/settings/SettingsScreen";
 import { Button } from "@/components/ui/button";
-import { styleCraftLogoDataUri } from "@/lib/branding";
+import { brandLogoDataUri } from "@/lib/branding";
 import { useTheme } from "@/lib/use-theme";
 import { cn } from "@/lib/utils";
 
@@ -36,7 +36,7 @@ export default function App() {
         <aside className="border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 md:w-60 md:shrink-0 md:border-b-0 md:border-r">
           <div className="mb-6">
             <div className="flex items-center gap-3">
-              <img alt="Islamia Printers logo" className="h-12 w-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1" src={styleCraftLogoDataUri} />
+              <img alt="Islamia Printers logo" className="h-12 w-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1" src={brandLogoDataUri} />
               <div>
                 <div className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-600 dark:text-blue-400">Islamia Printers</div>
                 <h1 className="mt-1 text-2xl font-bold tracking-tight">Sales & Khata</h1>

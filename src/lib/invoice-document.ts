@@ -1,4 +1,4 @@
-import { styleCraftLogoDataUri } from "@/lib/branding";
+import { brandLogoDataUri } from "@/lib/branding";
 import { formatCurrency } from "@/lib/currency";
 import { formatAmount, formatAmountOrBlank, formatDate, formatQty, formatRate } from "@/lib/format";
 import { workKinds, workLabels } from "@/lib/job-math";
@@ -67,7 +67,7 @@ function lines(values: Array<string | null | undefined>) {
 }
 
 function header(business: BusinessDocumentSettingsDto, title: string, subtitleLines: Array<string | null>) {
-  return `<div class="header"><div class="brand"><img class="logo" src="${styleCraftLogoDataUri}" alt="logo"><div><h1>${escapeHtml(business.businessName)}</h1><div class="muted">${lines([business.address, business.phone, business.email])}</div></div></div><div class="right"><h2>${escapeHtml(title)}</h2><div class="muted">${lines(subtitleLines)}</div></div></div>`;
+  return `<div class="header"><div class="brand"><img class="logo" src="${brandLogoDataUri}" alt="logo"><div><h1>${escapeHtml(business.businessName)}</h1><div class="muted">${lines([business.address, business.phone, business.email])}</div></div></div><div class="right"><h2>${escapeHtml(title)}</h2><div class="muted">${lines(subtitleLines)}</div></div></div>`;
 }
 
 function page(title: string, styles: string, body: string) {
