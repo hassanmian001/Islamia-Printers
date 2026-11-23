@@ -1,4 +1,4 @@
-import { BarChart3, Banknote, FileText, HandCoins, LayoutDashboard, Moon, NotebookText, Settings, ShoppingCart, Sun, Users } from "lucide-react";
+import { BarChart3, Banknote, ClipboardList, FileText, HandCoins, LayoutDashboard, Moon, NotebookText, Settings, ShoppingCart, Sun, Users } from "lucide-react";
 import { useState, type ComponentType } from "react";
 
 import { sections, type IconName, type SectionId } from "@/app-content";
@@ -6,6 +6,7 @@ import ContactsScreen from "@/components/contacts/ContactsScreen";
 import DashboardScreen from "@/components/dashboard/DashboardScreen";
 import LedgerScreen from "@/components/ledger/LedgerScreen";
 import PaymentsScreen from "@/components/payments/PaymentsScreen";
+import QuotationScreen from "@/components/quotations/QuotationScreen";
 import ReportsScreen from "@/components/reports/ReportsScreen";
 import CashSaleScreen from "@/components/sales/CashSaleScreen";
 import SalesScreen from "@/components/sales/SalesScreen";
@@ -21,6 +22,7 @@ const icons = {
   cash: Banknote,
   ledger: NotebookText,
   payments: HandCoins,
+  quotation: ClipboardList,
   reports: FileText,
   sales: ShoppingCart,
   settings: Settings,
@@ -30,6 +32,7 @@ const screens: Record<SectionId, ComponentType> = {
   dashboard: DashboardScreen,
   sales: SalesScreen,
   cash: CashSaleScreen,
+  quotation: QuotationScreen,
   payments: PaymentsScreen,
   ledger: LedgerScreen,
   contacts: ContactsScreen,

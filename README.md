@@ -26,6 +26,13 @@ There is no product list, stock, purchase, supplier or return tracking. Those we
 - Job bills (Sales) can take an advance the same way.
 - Editing a bill keeps its advance's receipt number; clearing the advance or deleting the bill removes it. An advance cannot be deleted on its own.
 
+## Quotation
+
+- Rates quoted to a party before the work: Description, Qty, Rate, Amount, an optional "valid till" date and notes. Numbered on their own (`Q-004`).
+- For a saved customer, or a name and phone typed in for someone not on the books.
+- Stays off the khata. When the party agrees, **Bill banayein** turns it into a cash sale bill (with any advance, cash or online) in one step; a typed-in party is added to Customers first. A quotation can become only one bill; deleting that bill frees it again.
+- Printed on the bill-book page headed QUOTATION, with only TOTAL filled; whole page or details only, like bills.
+
 ## Payment Received
 
 - Receive money from a party in **Cash** or **Online**, with a narration or online detail. Each receipt gets its own number (`3 CR`) and credits the khata.
@@ -34,9 +41,11 @@ There is no product list, stock, purchase, supplier or return tracking. Those we
 
 ## Printed bill
 
-- Every bill (job or cash) prints like the bill book: logo and business name, address and contacts from Settings, Date / Sr. / Name, a Description / Qty / Rate / Amount table, Total / Adv. / Bal., and a signature line.
+- Every bill prints on the shop's own A5 bill-book page (Islamia Bill Book 2025): Date, Sr., Name, Description / Qty / Rate / Amount, and TOTAL / P. Bal / ADV. / BAL.
+- **Poora bill** prints the artwork and the details on plain A5 paper. **Sirf detail** prints only the details, in black, onto a pre-printed bill-book page, with a right/left and down/up nudge in mm; both choices are remembered per PC.
+- P. Bal is the customer's khata balance just before the bill; BAL. is P. Bal + total − advance.
+- Print at A5, 100% / actual size (no "fit to page").
 - A job charged for several kinds of work prints its name, then one line per kind (Rota P, GTO P, ...).
-- In Settings, separate two contacts in the Phone field with `;`.
 
 ## Ledger (khata)
 

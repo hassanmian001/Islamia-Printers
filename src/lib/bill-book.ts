@@ -1,7 +1,7 @@
 import { billBookBackgroundDataUri } from "@/lib/bill-book-background";
 import { formatAmount, formatQty, formatRate } from "@/lib/format";
-import { billLines, escapeHtml, paymentMethodLabel } from "@/lib/invoice-document";
-import type { BillDocumentDto } from "@/types/stylecraft-api";
+import { billLines, escapeHtml, paymentMethodLabel, type BillLine } from "@/lib/invoice-document";
+import type { BillDocumentDto, QuotationDetailDto } from "@/types/stylecraft-api";
 
 /**
  * The shop's bill book (Islamia Bill Book 2025.pdf), on A5.
@@ -41,6 +41,8 @@ const layout = {
   rows: { top: 290, bottom: 524 },
   totals: { total: 525.2, previous: 549.6, advance: 573.9, balance: 598.2, height: 24.3 },
   notes: { top: 560, bottom: 592 },
+  /** Between the Date and Sr. fields, above their lines, for a word such as QUOTATION. */
+  heading: { left: 236, right: 388, top: 222, height: 17 },
 };
 
 const ROW_PT = 15;
@@ -68,15 +70,77 @@ export function billBookFileSuffix(mode: BillPrintMode) {
   return mode === "details" ? " (details only)" : "";
 }
 
+/** What goes on a bill-book page, whatever the document. */
+type BillBookPage = {
+  documentTitle: string;
+  /** Printed above the Date / Sr. line, e.g. "QUOTATION"; a bill has none. */
+  heading?: string;
+  date: Date;
+  serial: string;
+  name: string;
+  lines: BillLine[];
+  /** TOTAL, P. Bal, ADV. and BAL. values; null leaves the box empty. */
+  totals: { total: string; previous: string | null; advance: string | null; balance: string | null };
+  advanceNote?: string;
+  notes?: string | null;
+};
+
+function partyName(name: string, phone: string | null) {
+  return [name, phone ? `(${phone})` : null].filter(Boolean).join(" ");
+}
+
 /** The bill as an A5 page, ready to print or save as PDF. */
 export function buildBillHtml(bill: BillDocumentDto, options: BillPrintOptions = {}) {
+  return buildBillBookPage(
+    {
+      documentTitle: `Bill ${bill.billNumber}`,
+      date: bill.saleDate,
+      serial: String(bill.billNumber).padStart(3, "0"),
+      name: partyName(bill.customerName, bill.customerPhone),
+      lines: billLines(bill),
+      totals: {
+        total: money(bill.totalAmountCents),
+        previous: money(bill.previousBalanceCents),
+        advance: money(bill.advanceCents),
+        balance: money(bill.closingBalanceCents),
+      },
+      advanceNote: bill.advanceCents > 0 && bill.advanceMethod === "online" ? paymentMethodLabel(bill.advanceMethod).toUpperCase() : "",
+      notes: bill.notes,
+    },
+    options,
+  );
+}
+
+/**
+ * A quotation on the same bill-book page, headed QUOTATION, numbered Q-001.
+ * Only TOTAL is filled: a quotation has no previous balance, advance or balance.
+ */
+export function buildQuotationHtml(quotation: QuotationDetailDto, options: BillPrintOptions = {}) {
+  const validity = quotation.validUntil ? `Valid till ${billDate(quotation.validUntil)}` : null;
+
+  return buildBillBookPage(
+    {
+      documentTitle: `Quotation Q-${quotation.quotationNumber}`,
+      heading: "QUOTATION",
+      date: quotation.quotationDate,
+      serial: `Q-${String(quotation.quotationNumber).padStart(3, "0")}`,
+      name: partyName(quotation.customerName, quotation.customerPhone),
+      lines: billLines({ jobs: [], items: quotation.items }),
+      totals: { total: money(quotation.totalAmountCents), previous: null, advance: null, balance: null },
+      notes: [validity, quotation.notes].filter(Boolean).join(" · ") || null,
+    },
+    options,
+  );
+}
+
+function buildBillBookPage(page: BillBookPage, options: BillPrintOptions) {
   const mode = options.mode ?? "full";
   const offsetX = mode === "details" ? (options.offsetXMm ?? 0) : 0;
   const offsetY = mode === "details" ? (options.offsetYMm ?? 0) : 0;
-  const lines = billLines(bill);
+  const lines = page.lines;
   const { columns, rows, totals } = layout;
 
-  // Shrink the rows when a bill has many lines, so the amounts never run into the TOTAL box.
+  // Shrink the rows when there are many lines, so the amounts never run into the TOTAL box.
   const available = rows.bottom - rows.top;
   const rowPt = Math.max(MIN_ROW_PT, Math.min(ROW_PT, available / Math.max(lines.length, 1)));
   const fontPt = Math.min(9.5, rowPt * 0.66);
@@ -97,22 +161,22 @@ export function buildBillHtml(bill: BillDocumentDto, options: BillPrintOptions =
     })
     .join("");
 
-  const totalCell = (topPt: number, value: string, note = "") =>
-    `<div class="f total" style="${box(columns.amount.left, columns.amount.right, topPt, totals.height)}"><span>${escapeHtml(value)}</span>${note ? `<small>${escapeHtml(note)}</small>` : ""}</div>`;
-
-  const name = [bill.customerName, bill.customerPhone ? `(${bill.customerPhone})` : null].filter(Boolean).join(" ");
-  const advanceNote = bill.advanceCents > 0 && bill.advanceMethod === "online" ? paymentMethodLabel(bill.advanceMethod).toUpperCase() : "";
+  const totalCell = (topPt: number, value: string | null, note = "") =>
+    value === null
+      ? ""
+      : `<div class="f total" style="${box(columns.amount.left, columns.amount.right, topPt, totals.height)}"><span>${escapeHtml(value)}</span>${note ? `<small>${escapeHtml(note)}</small>` : ""}</div>`;
 
   const details = `
-    ${onLine(layout.date, billDate(bill.saleDate), "c")}
-    ${onLine(layout.sr, String(bill.billNumber).padStart(3, "0"), "c")}
-    ${onLine(layout.name, name, "l name")}
+    ${page.heading ? `<div class="f heading" style="${box(layout.heading.left, layout.heading.right, layout.heading.top, layout.heading.height)}">${escapeHtml(page.heading)}</div>` : ""}
+    ${onLine(layout.date, billDate(page.date), "c")}
+    ${onLine(layout.sr, page.serial, "c")}
+    ${onLine(layout.name, page.name, "l name")}
     ${itemRows}
-    ${totalCell(totals.total, money(bill.totalAmountCents))}
-    ${totalCell(totals.previous, money(bill.previousBalanceCents))}
-    ${totalCell(totals.advance, money(bill.advanceCents), advanceNote)}
-    ${totalCell(totals.balance, money(bill.closingBalanceCents))}
-    ${bill.notes && lines.length * rowPt < layout.notes.top - rows.top ? `<div class="f notes" style="${box(columns.description.left + 4, columns.description.right - 4, layout.notes.top, layout.notes.bottom - layout.notes.top)}">${escapeHtml(bill.notes)}</div>` : ""}`;
+    ${totalCell(totals.total, page.totals.total)}
+    ${totalCell(totals.previous, page.totals.previous)}
+    ${totalCell(totals.advance, page.totals.advance, page.advanceNote ?? "")}
+    ${totalCell(totals.balance, page.totals.balance)}
+    ${page.notes && lines.length * rowPt < layout.notes.top - rows.top ? `<div class="f notes" style="${box(columns.description.left + 4, columns.description.right - 4, layout.notes.top, layout.notes.bottom - layout.notes.top)}">${escapeHtml(page.notes)}</div>` : ""}`;
 
   const ink = mode === "details" ? "#000" : "#1f2937";
   const styles = `
@@ -132,9 +196,10 @@ export function buildBillHtml(bill: BillDocumentDto, options: BillPrintOptions =
     .f.total{display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10.5pt;font-weight:700;line-height:1.1}
     .f.total small{font-size:6.5pt;font-weight:600;letter-spacing:.06em}
     .f.notes{white-space:normal;font-size:8pt;font-style:italic}
+    .f.heading{text-align:center;font-size:13pt;font-weight:800;letter-spacing:.32em;color:${mode === "details" ? "#000" : "#991f36"};line-height:${mm(layout.heading.height).toFixed(2)}mm}
   `;
 
   const body = `<div class="page">${mode === "full" ? `<img class="bg" src="${billBookBackgroundDataUri}" alt="">` : ""}<div class="layer">${details}</div></div>`;
 
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Bill ${bill.billNumber}</title><style>${styles}</style></head><body>${body}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(page.documentTitle)}</title><style>${styles}</style></head><body>${body}</body></html>`;
 }

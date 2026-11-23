@@ -166,6 +166,71 @@ export type SalesApi = {
 };
 
 // ---------------------------------------------------------------------------
+// Quotations: prices quoted before the work, kept off the khata
+// ---------------------------------------------------------------------------
+
+export type QuotationInput = {
+  /** A saved customer, or leave empty and give customerName for someone not on the books. */
+  customerId?: number | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  quotationDate: Date | string;
+  validUntil?: Date | string | null;
+  notes?: string | null;
+  items: CashSaleItemInput[];
+};
+
+export type QuotationDetailDto = {
+  id: number;
+  quotationNumber: number;
+  customerId: number | null;
+  customerName: string;
+  customerPhone: string | null;
+  quotationDate: Date;
+  validUntil: Date | null;
+  totalAmountCents: number;
+  notes: string | null;
+  items: CashSaleItemDto[];
+  /** The cash sale bill made from this quotation, once the party agreed. */
+  convertedSaleId: number | null;
+  convertedBillNumber: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type QuotationHistoryDto = Omit<QuotationDetailDto, "items"> & {
+  itemCount: number;
+  itemNames: string[];
+};
+
+export type QuotationListFilters = {
+  search?: string | null;
+  /** "YYYY-MM-DD", inclusive. */
+  startDate?: string | null;
+  /** "YYYY-MM-DD", inclusive. */
+  endDate?: string | null;
+};
+
+/** Turning an agreed quotation into a cash sale bill on the party's khata. */
+export type ConvertQuotationInput = {
+  saleDate: Date | string;
+  advanceCents?: number;
+  advanceMethod?: PaymentMethod;
+  advanceReference?: string | null;
+};
+
+export type QuotationApi = {
+  list(filters?: QuotationListFilters): Promise<QuotationHistoryDto[]>;
+  get(id: number): Promise<QuotationDetailDto>;
+  nextNumber(): Promise<number>;
+  create(input: QuotationInput): Promise<QuotationDetailDto>;
+  update(id: number, input: QuotationInput): Promise<QuotationDetailDto>;
+  delete(id: number): Promise<void>;
+  /** Makes a cash sale bill from the quotation; a typed-in party is added to Customers first. */
+  convertToSale(id: number, input: ConvertQuotationInput): Promise<SaleDetailDto>;
+};
+
+// ---------------------------------------------------------------------------
 // Ledger (khata)
 // ---------------------------------------------------------------------------
 
@@ -492,6 +557,7 @@ export type StyleCraftApi = {
   dashboard: DashboardApi;
   invoices: InvoiceApi;
   ledger: LedgerApi;
+  quotations: QuotationApi;
   reports: ReportsApi;
   sales: SalesApi;
   security: SecurityApi;

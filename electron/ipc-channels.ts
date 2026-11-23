@@ -32,6 +32,16 @@ export const invoiceChannels = {
   reveal: "invoices:reveal",
 } as const;
 
+export const quotationChannels = {
+  list: "quotations:list",
+  get: "quotations:get",
+  nextNumber: "quotations:nextNumber",
+  create: "quotations:create",
+  update: "quotations:update",
+  delete: "quotations:delete",
+  convertToSale: "quotations:convertToSale",
+} as const;
+
 export const reportsChannels = {
   getReports: "reports:getReports",
 } as const;

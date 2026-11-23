@@ -31,6 +31,8 @@ Important rules:
 
 - A sale bill belongs to one customer. A job bill holds printing jobs; a cash sale bill holds description / qty / rate lines. Both share bill numbers.
 - An advance taken with a bill is a payment tied to it (`payments.sale_id`), cash or online; it changes only through the bill.
+- A quotation never touches the khata; converting it creates a cash sale bill in one transaction and links it (`quotations.converted_sale_id`).
+- Bills and quotations print on the A5 bill-book page (`src/lib/bill-book.ts`); positions come from the design PDF, so do not move them by eye.
 - Each job is charged for Rota P, GTO P, Cutting, Lamination and Dye, each as quantity x rate; the job's Grand Total is their sum (`src/lib/job-math.ts`).
 - A customer's balance is opening balance + bills - payments received. Every bill and payment shows on their ledger.
 - Use database transactions when saving a bill and its jobs.

@@ -34,6 +34,16 @@ const invoiceChannels = {
   reveal: "invoices:reveal",
 };
 
+const quotationChannels = {
+  list: "quotations:list",
+  get: "quotations:get",
+  nextNumber: "quotations:nextNumber",
+  create: "quotations:create",
+  update: "quotations:update",
+  delete: "quotations:delete",
+  convertToSale: "quotations:convertToSale",
+};
+
 const reportsChannels = {
   getReports: "reports:getReports",
 };
@@ -109,6 +119,15 @@ const stylecraftApi = {
     recordPayment: (input) => ipcRenderer.invoke(ledgerChannels.recordPayment, input),
     listPayments: (filters) => ipcRenderer.invoke(ledgerChannels.listPayments, filters),
     deletePayment: (id, password, actorName) => ipcRenderer.invoke(ledgerChannels.deletePayment, id, password, actorName),
+  },
+  quotations: {
+    list: (filters) => ipcRenderer.invoke(quotationChannels.list, filters),
+    get: (id) => ipcRenderer.invoke(quotationChannels.get, id),
+    nextNumber: () => ipcRenderer.invoke(quotationChannels.nextNumber),
+    create: (input) => ipcRenderer.invoke(quotationChannels.create, input),
+    update: (id, input) => ipcRenderer.invoke(quotationChannels.update, id, input),
+    delete: (id) => ipcRenderer.invoke(quotationChannels.delete, id),
+    convertToSale: (id, input) => ipcRenderer.invoke(quotationChannels.convertToSale, id, input),
   },
   reports: {
     getReports: (filters) => ipcRenderer.invoke(reportsChannels.getReports, filters),

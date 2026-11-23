@@ -8,6 +8,7 @@ import { registerContactsHandlers } from "./contacts-ipc.js";
 import { registerDashboardHandlers } from "./dashboard-ipc.js";
 import { registerInvoiceHandlers } from "./invoices-ipc.js";
 import { registerLedgerHandlers } from "./ledger-ipc.js";
+import { registerQuotationHandlers } from "./quotations-ipc.js";
 import { registerReportsHandlers } from "./reports-ipc.js";
 import { getRendererTarget } from "./renderer-target.js";
 import { registerSalesHandlers } from "./sales-ipc.js";
@@ -71,6 +72,7 @@ void app.whenReady().then(() => {
   registerDashboardHandlers(ipcMain);
   registerInvoiceHandlers(ipcMain);
   registerLedgerHandlers(ipcMain);
+  registerQuotationHandlers(ipcMain);
   registerReportsHandlers(ipcMain);
   registerSalesHandlers(ipcMain);
   registerSecurityHandlers(ipcMain);

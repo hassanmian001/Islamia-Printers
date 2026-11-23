@@ -1,6 +1,6 @@
-export type SectionId = "dashboard" | "sales" | "cash" | "payments" | "ledger" | "contacts" | "reports" | "settings";
+export type SectionId = "dashboard" | "sales" | "cash" | "quotation" | "payments" | "ledger" | "contacts" | "reports" | "settings";
 
-export type IconName = "dashboard" | "contacts" | "sales" | "cash" | "payments" | "ledger" | "reports" | "settings" | "chart";
+export type IconName = "dashboard" | "contacts" | "sales" | "cash" | "quotation" | "payments" | "ledger" | "reports" | "settings" | "chart";
 
 export type Section = {
   id: SectionId;
@@ -33,6 +33,12 @@ export const sections: Section[] = [
     label: "Cash Sale",
     description: "A counter sale written like the bill book: description, qty, rate, with advance (cash or online) and balance.",
     icon: "cash",
+  },
+  {
+    id: "quotation",
+    label: "Quotation",
+    description: "Rates quoted before the work, printed on the bill book and turned into a bill when agreed.",
+    icon: "quotation",
   },
   {
     id: "payments",
@@ -78,6 +84,10 @@ export const moduleCards: Record<SectionId, ModuleCard[]> = {
   cash: [
     { title: "Bill book entry", description: "Description, qty and rate, like the printed bill.", icon: "cash" },
     { title: "Advance and balance", description: "Advance taken in cash or online; the balance stays on the khata.", icon: "payments" },
+  ],
+  quotation: [
+    { title: "Rates before work", description: "Description, qty and rate, off the khata.", icon: "quotation" },
+    { title: "One-click bill", description: "Turn an agreed quotation into a cash sale bill.", icon: "cash" },
   ],
   payments: [
     { title: "Receipts", description: "Every payment gets its own CR number.", icon: "payments" },

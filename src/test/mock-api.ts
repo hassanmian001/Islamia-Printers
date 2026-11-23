@@ -47,6 +47,15 @@ export function createMockApi(overrides: DeepPartialApi = {}): StyleCraftApi {
       listPayments: vi.fn().mockResolvedValue([]),
       deletePayment: vi.fn().mockResolvedValue(undefined),
     },
+    quotations: {
+      list: vi.fn().mockResolvedValue([]),
+      get: vi.fn().mockResolvedValue({}),
+      nextNumber: vi.fn().mockResolvedValue(1),
+      create: vi.fn().mockResolvedValue({}),
+      update: vi.fn().mockResolvedValue({}),
+      delete: vi.fn().mockResolvedValue(undefined),
+      convertToSale: vi.fn().mockResolvedValue({}),
+    },
     reports: { getReports: vi.fn().mockResolvedValue({}) },
     sales: {
       list: vi.fn().mockResolvedValue([]),

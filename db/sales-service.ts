@@ -25,7 +25,7 @@ export class SaleValidationError extends Error {
 
 type Db = ReturnType<typeof createDb>["db"];
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
-type DbClient = Db | Tx;
+export type DbClient = Db | Tx;
 type SaleJobRow = typeof saleJobs.$inferSelect;
 
 const columnsByKind = {
@@ -282,7 +282,7 @@ function withAdvance<T extends { totalAmountCents: number }>(row: T, advance: Ad
   };
 }
 
-function getSaleDetail(db: DbClient, id: number): SaleDetailDto {
+export function getSaleDetail(db: DbClient, id: number): SaleDetailDto {
   const sale = db.select(saleColumns).from(sales).innerJoin(customers, eq(sales.customerId, customers.id)).where(eq(sales.id, id)).get();
 
   if (sale === undefined) {
@@ -378,38 +378,44 @@ export function getNextBillNumber(databasePath?: string): number {
   }
 }
 
+/**
+ * Inserts a bill, its lines and any advance using the caller's transaction, and
+ * returns the new bill's id. Used by createSale and by turning a quotation into
+ * a bill, so both are checked and written the same way.
+ */
+export function createSaleIn(tx: DbClient, input: SaleInput): number {
+  const normalized = normalizeSaleInput(input);
+  assertCustomerExists(tx, normalized.customerId);
+
+  const inserted = tx
+    .insert(sales)
+    .values({
+      billNumber: nextBillNumberIn(tx),
+      kind: normalized.kind,
+      customerId: normalized.customerId,
+      saleDate: normalized.saleDate,
+      totalAmountCents: normalized.totalAmountCents,
+      notes: normalized.notes,
+      // Millisecond precision, so same-day entries on the khata keep the order they were typed in.
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .returning({ id: sales.id })
+    .get();
+
+  writeLines(tx, inserted.id, normalized);
+  syncAdvance(tx, inserted.id, normalized);
+
+  return inserted.id;
+}
+
 /** Records a bill, its lines and any advance together; if anything is rejected, nothing is saved. */
 export function createSale(databasePath: string | undefined, input: SaleInput): SaleDetailDto {
   runMigrations(databasePath);
   const { sqlite, db } = createDb(databasePath);
 
   try {
-    const normalized = normalizeSaleInput(input);
-
-    const saleId = db.transaction((tx) => {
-      assertCustomerExists(tx, normalized.customerId);
-
-      const inserted = tx
-        .insert(sales)
-        .values({
-          billNumber: nextBillNumberIn(tx),
-          kind: normalized.kind,
-          customerId: normalized.customerId,
-          saleDate: normalized.saleDate,
-          totalAmountCents: normalized.totalAmountCents,
-          notes: normalized.notes,
-          // Millisecond precision, so same-day entries on the khata keep the order they were typed in.
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .returning({ id: sales.id })
-        .get();
-
-      writeLines(tx, inserted.id, normalized);
-      syncAdvance(tx, inserted.id, normalized);
-
-      return inserted.id;
-    });
+    const saleId = db.transaction((tx) => createSaleIn(tx, input));
 
     return getSaleDetail(db, saleId);
   } finally {

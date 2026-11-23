@@ -28,7 +28,7 @@ describe("BillPreview", () => {
     expect(screen.getByLabelText(/Poora bill/)).toBeChecked();
     expect(screen.getByTestId("bill-previous-balance")).toHaveTextContent("4,500/-");
     expect(screen.getByTestId("bill-balance")).toHaveTextContent("6,550/-");
-    expect(screen.getByTitle("Bill 15 print preview")).toBeInTheDocument();
+    expect(screen.getByTitle("Bill No. 15 print preview")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
 

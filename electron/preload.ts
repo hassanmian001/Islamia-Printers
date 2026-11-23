@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-import { auditChannels, backupChannels, contactsChannels, dashboardChannels, invoiceChannels, ledgerChannels, reportsChannels, salesChannels, securityChannels, settingsChannels, updateChannels } from "./ipc-channels.js";
+import { auditChannels, backupChannels, contactsChannels, dashboardChannels, invoiceChannels, ledgerChannels, quotationChannels, reportsChannels, salesChannels, securityChannels, settingsChannels, updateChannels } from "./ipc-channels.js";
 import type { StyleCraftApi } from "../src/types/stylecraft-api.js";
 
 const stylecraftApi: StyleCraftApi = {
@@ -40,6 +40,15 @@ const stylecraftApi: StyleCraftApi = {
     recordPayment: (input) => ipcRenderer.invoke(ledgerChannels.recordPayment, input),
     listPayments: (filters) => ipcRenderer.invoke(ledgerChannels.listPayments, filters),
     deletePayment: (id, password, actorName) => ipcRenderer.invoke(ledgerChannels.deletePayment, id, password, actorName),
+  },
+  quotations: {
+    list: (filters) => ipcRenderer.invoke(quotationChannels.list, filters),
+    get: (id) => ipcRenderer.invoke(quotationChannels.get, id),
+    nextNumber: () => ipcRenderer.invoke(quotationChannels.nextNumber),
+    create: (input) => ipcRenderer.invoke(quotationChannels.create, input),
+    update: (id, input) => ipcRenderer.invoke(quotationChannels.update, id, input),
+    delete: (id) => ipcRenderer.invoke(quotationChannels.delete, id),
+    convertToSale: (id, input) => ipcRenderer.invoke(quotationChannels.convertToSale, id, input),
   },
   reports: {
     getReports: (filters) => ipcRenderer.invoke(reportsChannels.getReports, filters),

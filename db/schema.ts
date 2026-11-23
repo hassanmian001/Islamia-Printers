@@ -142,6 +142,49 @@ export const payments = sqliteTable(
   }),
 );
 
+// A price quoted to a party before the work is agreed. It never touches the
+// khata. The party may be a saved customer or just a name typed in; the name
+// and phone are kept on the quotation either way, so it reads the same later.
+// convertedSaleId points at the cash sale bill made from it, once accepted.
+export const quotations = sqliteTable(
+  "quotations",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    quotationNumber: integer("quotation_number").notNull(),
+    customerId: integer("customer_id").references(() => customers.id, { onDelete: "set null" }),
+    customerName: text("customer_name").notNull(),
+    customerPhone: text("customer_phone"),
+    quotationDate: integer("quotation_date", { mode: "timestamp_ms" }).notNull(),
+    validUntil: integer("valid_until", { mode: "timestamp_ms" }),
+    totalAmountCents: integer("total_amount_cents").notNull().default(0),
+    notes: text("notes"),
+    convertedSaleId: integer("converted_sale_id").references(() => sales.id, { onDelete: "set null" }),
+    ...timestamps,
+  },
+  (table) => ({
+    numberIdx: uniqueIndex("quotations_number_unique").on(table.quotationNumber),
+    dateIdx: index("quotations_date_idx").on(table.quotationDate),
+  }),
+);
+
+export const quotationItems = sqliteTable(
+  "quotation_items",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    quotationId: integer("quotation_id")
+      .notNull()
+      .references(() => quotations.id, { onDelete: "cascade" }),
+    position: integer("position").notNull().default(0),
+    description: text("description").notNull(),
+    qty: real("qty").notNull().default(0),
+    rateCents: integer("rate_cents").notNull().default(0),
+    amountCents: integer("amount_cents").notNull().default(0),
+  },
+  (table) => ({
+    quotationIdx: index("quotation_items_quotation_id_idx").on(table.quotationId),
+  }),
+);
+
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
@@ -169,4 +212,4 @@ export const auditLogs = sqliteTable(
   }),
 );
 
-export const schemaTableNames = ["audit_logs", "cash_sale_items", "customers", "payments", "sale_jobs", "sales", "settings"] as const;
+export const schemaTableNames = ["audit_logs", "cash_sale_items", "customers", "payments", "quotation_items", "quotations", "sale_jobs", "sales", "settings"] as const;

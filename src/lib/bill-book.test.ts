@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { billBookFileSuffix, buildBillHtml } from "./bill-book";
+import { billBookFileSuffix, buildBillHtml, buildQuotationHtml } from "./bill-book";
 import { billDocument } from "@/test/mock-api";
-import type { BillDocumentDto } from "@/types/stylecraft-api";
+import type { BillDocumentDto, QuotationDetailDto } from "@/types/stylecraft-api";
 
 function cashBill(overrides: Partial<BillDocumentDto> = {}) {
   return billDocument({
@@ -79,5 +79,52 @@ describe("bill book page", () => {
   it("marks a details-only PDF in its file name", () => {
     expect(billBookFileSuffix("details")).toBe(" (details only)");
     expect(billBookFileSuffix("full")).toBe("");
+  });
+});
+
+function quotation(overrides: Partial<QuotationDetailDto> = {}): QuotationDetailDto {
+  return {
+    id: 1,
+    quotationNumber: 4,
+    customerId: null,
+    customerName: "Madina Pharma",
+    customerPhone: "0300-5555555",
+    quotationDate: new Date(2026, 10, 23),
+    validUntil: new Date(2026, 10, 30),
+    totalAmountCents: 1_950_000,
+    notes: "Rates for 1000 boxes",
+    items: [
+      { id: 1, position: 0, description: "Medicine box 3 colour", qty: 1000, rateCents: 1_800, amountCents: 1_800_000 },
+      { id: 2, position: 1, description: "Die cutting", qty: 1, rateCents: 150_000, amountCents: 150_000 },
+    ],
+    convertedSaleId: null,
+    convertedBillNumber: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
+}
+
+describe("quotation page", () => {
+  it("uses the bill-book page, headed QUOTATION and numbered Q-004, with only TOTAL filled", () => {
+    const html = buildQuotationHtml(quotation());
+
+    expect(html).toContain('<img class="bg"');
+    expect(html).toContain(">QUOTATION<");
+    expect(html).toContain(">Q-004<");
+    expect(html).toContain("Madina Pharma (0300-5555555)");
+    expect(html).toContain("Medicine box 3 colour");
+    expect(html).toContain("18,000/-");
+    expect(html).toContain("Valid till 30-11-2026 · Rates for 1000 boxes");
+    const totals = [...html.matchAll(/class="f total"[^>]*><span>([^<]+)<\/span>/g)].map((match) => match[1]);
+    expect(totals).toEqual(["19,500/-"]);
+  });
+
+  it("prints only the details for a pre-printed pad, heading included", () => {
+    const html = buildQuotationHtml(quotation({ validUntil: null, notes: null }), { mode: "details" });
+
+    expect(html).not.toContain('class="bg"');
+    expect(html).toContain(">QUOTATION<");
+    expect(html).not.toContain("Valid till");
   });
 });

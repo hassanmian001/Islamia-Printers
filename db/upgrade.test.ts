@@ -112,7 +112,7 @@ describe("upgrading from the stock app", () => {
 
     runMigrations(databasePath);
 
-    expect(tableNames(databasePath)).toEqual(["audit_logs", "cash_sale_items", "customers", "payments", "sale_jobs", "sales", "settings"]);
+    expect(tableNames(databasePath)).toEqual(["audit_logs", "cash_sale_items", "customers", "payments", "quotation_items", "quotations", "sale_jobs", "sales", "settings"]);
     expect(listCustomers(databasePath)).toEqual([]);
   });
 
@@ -148,7 +148,7 @@ describe("upgrading from the stock app", () => {
 
     runMigrations(databasePath);
 
-    expect(tableNames(databasePath)).toEqual(["audit_logs", "cash_sale_items", "customers", "payments", "sale_jobs", "sales", "settings"]);
+    expect(tableNames(databasePath)).toEqual(["audit_logs", "cash_sale_items", "customers", "payments", "quotation_items", "quotations", "sale_jobs", "sales", "settings"]);
   });
 
   it("keeps v1.1 bills and payments when cash sales arrive, as job bills and cash payments", () => {
