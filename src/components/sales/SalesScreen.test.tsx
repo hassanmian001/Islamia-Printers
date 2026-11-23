@@ -76,6 +76,10 @@ describe("SalesScreen", () => {
 
     await waitFor(() => expect(api.sales.create).toHaveBeenCalledTimes(1));
     expect(api.sales.create).toHaveBeenCalledWith({
+      kind: "job",
+      advanceCents: 0,
+      advanceMethod: "cash",
+      advanceReference: null,
       customerId: 2,
       saleDate: "2026-11-20",
       notes: null,
@@ -148,5 +152,47 @@ describe("SalesScreen", () => {
 
     await waitFor(() => expect(api.sales.delete).toHaveBeenCalledWith(7, ""));
     expect(await screen.findByText("Bill No. 15 deleted.")).toBeInTheDocument();
+  });
+
+  it("takes an advance online and shows what is left as balance", async () => {
+    render(<SalesScreen />);
+    await screen.findAllByRole("option", { name: /Al Noor/ });
+
+    fireEvent.change(screen.getByLabelText("Customer", { selector: "#sale-customer" }), { target: { value: "1" } });
+    type("Job 1 name", "Cards");
+    type("Job 1 Rota P quantity", "1000");
+    type("Job 1 Rota P rate", "2");
+    type("Advance received now", "500");
+    fireEvent.click(screen.getByLabelText("Online"));
+    type("Online detail", "JazzCash TID 77");
+
+    expect(screen.getByTestId("sale-balance")).toHaveTextContent("Rs. 1,500.00");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save bill" }));
+
+    await waitFor(() => expect(api.sales.create).toHaveBeenCalledTimes(1));
+    expect(api.sales.create).toHaveBeenCalledWith(expect.objectContaining({ kind: "job", advanceCents: 50_000, advanceMethod: "online", advanceReference: "JazzCash TID 77" }));
+  });
+
+  it("refuses an advance larger than the bill", async () => {
+    render(<SalesScreen />);
+    await screen.findAllByRole("option", { name: /Al Noor/ });
+
+    fireEvent.change(screen.getByLabelText("Customer", { selector: "#sale-customer" }), { target: { value: "1" } });
+    type("Job 1 name", "Cards");
+    type("Job 1 Rota P rate", "100");
+    type("Advance received now", "101");
+    fireEvent.click(screen.getByRole("button", { name: "Save bill" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Advance cannot be more than the bill total.");
+    expect(api.sales.create).not.toHaveBeenCalled();
+  });
+
+  it("lists only job bills in its history", async () => {
+    render(<SalesScreen />);
+
+    await screen.findByText("Visiting cards");
+
+    expect(api.sales.list).toHaveBeenCalledWith(expect.objectContaining({ kind: "job" }));
   });
 });

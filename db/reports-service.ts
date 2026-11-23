@@ -5,7 +5,7 @@ import type { ReportFilters, ReportsDto, SalesReportRowDto } from "../src/types/
 import { createDb } from "./client.js";
 import { endOfDayExclusive, parseDay } from "./dates.js";
 import { runMigrations } from "./migrate.js";
-import { loadJobsForSales } from "./sales-service.js";
+import { loadItemsForSales, loadJobsForSales } from "./sales-service.js";
 import { customers, payments, sales } from "./schema.js";
 
 export class ReportValidationError extends Error {
@@ -15,7 +15,9 @@ export class ReportValidationError extends Error {
   }
 }
 
-/** Every job sold in the date range, one row each, with totals per kind of work. */
+const noCharge = { qty: 0, rateCents: 0, amountCents: 0 };
+
+/** Every line sold in the date range (a job, or a cash sale line), one row each, with totals per kind of work. */
 export function getReports(databasePath?: string, filters: ReportFilters = {}): ReportsDto {
   let start: Date | null;
   let end: Date | null;
@@ -54,49 +56,68 @@ export function getReports(databasePath?: string, filters: ReportFilters = {}): 
     }
 
     const bills = db
-      .select({ id: sales.id, billNumber: sales.billNumber, saleDate: sales.saleDate, customerName: customers.name })
+      .select({ id: sales.id, billNumber: sales.billNumber, kind: sales.kind, saleDate: sales.saleDate, customerName: customers.name })
       .from(sales)
       .innerJoin(customers, eq(sales.customerId, customers.id))
       .where(saleConditions.length > 0 ? and(...saleConditions) : undefined)
       .orderBy(asc(sales.saleDate), asc(sales.billNumber))
       .all();
 
-    const jobsBySale = loadJobsForSales(
-      db,
-      bills.map((bill) => bill.id),
-    );
+    const ids = bills.map((bill) => bill.id);
+    const jobsBySale = loadJobsForSales(db, ids);
+    const itemsBySale = loadItemsForSales(db, ids);
 
-    const rows: SalesReportRowDto[] = bills.flatMap((bill) =>
-      (jobsBySale.get(bill.id) ?? []).map((job) => ({
-        saleId: bill.id,
-        billNumber: bill.billNumber,
-        saleDate: bill.saleDate,
-        customerName: bill.customerName,
-        jobName: job.jobName,
-        totalAmountCents: job.totalAmountCents,
-        rota: job.rota,
-        gto: job.gto,
-        cutting: job.cutting,
-        lamination: job.lamination,
-        dye: job.dye,
-      })),
-    );
+    const rows: SalesReportRowDto[] = bills.flatMap((bill) => {
+      const base = { saleId: bill.id, billNumber: bill.billNumber, saleKind: bill.kind, saleDate: bill.saleDate, customerName: bill.customerName };
 
-    const receivedCents =
-      db
-        .select({ total: sql<number>`coalesce(sum(${payments.amountCents}), 0)` })
-        .from(payments)
-        .where(paymentConditions.length > 0 ? and(...paymentConditions) : undefined)
-        .get()?.total ?? 0;
+      return [
+        ...(jobsBySale.get(bill.id) ?? []).map((job) => ({
+          ...base,
+          qty: 0,
+          rateCents: 0,
+          jobName: job.jobName,
+          totalAmountCents: job.totalAmountCents,
+          rota: job.rota,
+          gto: job.gto,
+          cutting: job.cutting,
+          lamination: job.lamination,
+          dye: job.dye,
+        })),
+        ...(itemsBySale.get(bill.id) ?? []).map((item) => ({
+          ...base,
+          qty: item.qty,
+          rateCents: item.rateCents,
+          jobName: item.description,
+          totalAmountCents: item.amountCents,
+          rota: noCharge,
+          gto: noCharge,
+          cutting: noCharge,
+          lamination: noCharge,
+          dye: noCharge,
+        })),
+      ];
+    });
+
+    const received = db
+      .select({ method: payments.method, total: sql<number>`coalesce(sum(${payments.amountCents}), 0)` })
+      .from(payments)
+      .where(paymentConditions.length > 0 ? and(...paymentConditions) : undefined)
+      .groupBy(payments.method)
+      .all();
+    const receivedCashCents = received.find((row) => row.method === "cash")?.total ?? 0;
+    const receivedOnlineCents = received.find((row) => row.method === "online")?.total ?? 0;
 
     return {
       filters,
       rows,
       workTotals: sumWorkAmounts(rows),
       salesTotalCents: rows.reduce((sum, row) => sum + row.totalAmountCents, 0),
+      cashSalesCents: rows.filter((row) => row.saleKind === "cash").reduce((sum, row) => sum + row.totalAmountCents, 0),
       billCount: bills.length,
       jobCount: rows.length,
-      receivedCents,
+      receivedCents: receivedCashCents + receivedOnlineCents,
+      receivedCashCents,
+      receivedOnlineCents,
     };
   } finally {
     sqlite.close();

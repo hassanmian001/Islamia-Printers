@@ -1,11 +1,20 @@
 import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 
 import { jobTotalCents, workAmountCents, workKinds, type WorkKind } from "../src/lib/job-math.js";
-import type { SaleDetailDto, SaleHistoryDto, SaleInput, SaleJobDto, SaleListFilters } from "../src/types/stylecraft-api.js";
+import type {
+  CashSaleItemDto,
+  PaymentMethod,
+  SaleDetailDto,
+  SaleHistoryDto,
+  SaleInput,
+  SaleJobDto,
+  SaleKind,
+  SaleListFilters,
+} from "../src/types/stylecraft-api.js";
 import { createDb } from "./client.js";
 import { endOfDayExclusive, normalizeEntryDate, parseDay } from "./dates.js";
 import { runMigrations } from "./migrate.js";
-import { auditLogs, customers, saleJobs, sales } from "./schema.js";
+import { auditLogs, cashSaleItems, customers, payments, saleJobs, sales } from "./schema.js";
 
 export class SaleValidationError extends Error {
   constructor(message: string) {
@@ -45,22 +54,12 @@ function validateId(value: number, label: string) {
   }
 }
 
-function normalizeSaleInput(input: SaleInput) {
-  validateId(input.customerId, "Customer");
-
-  let saleDate: Date;
-
-  try {
-    saleDate = normalizeEntryDate(input.saleDate, "Sale date");
-  } catch (error) {
-    throw new SaleValidationError(error instanceof Error ? error.message : "Sale date is required.");
-  }
-
+function normalizeJobs(input: SaleInput) {
   if (!Array.isArray(input.jobs) || input.jobs.length === 0) {
     throw new SaleValidationError("Add at least one job to the bill.");
   }
 
-  const jobs = input.jobs.map((job, index) => {
+  return input.jobs.map((job, index) => {
     const jobName = job.jobName?.trim() ?? "";
     const label = jobName ? `"${jobName}"` : `Job ${index + 1}`;
 
@@ -105,15 +104,84 @@ function normalizeSaleInput(input: SaleInput) {
       throw new SaleValidationError(`${label} has no charges. Fill in a quantity and rate for at least one kind of work.`);
     }
 
-    return { position: index, jobName, ...values, totalAmountCents };
+    return { position: index, ...values, jobName, totalAmountCents };
   });
+}
+
+function normalizeItems(input: SaleInput) {
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    throw new SaleValidationError("Add at least one line to the bill.");
+  }
+
+  return input.items.map((item, index) => {
+    const description = item.description?.trim() ?? "";
+    const label = description ? `"${description}"` : `Line ${index + 1}`;
+    const qty = Number(item.qty ?? 0);
+    const rateCents = Number(item.rateCents ?? 0);
+
+    if (!description) {
+      throw new SaleValidationError(`Line ${index + 1} needs a description.`);
+    }
+
+    if (!Number.isFinite(qty) || qty <= 0) {
+      throw new SaleValidationError(`${label}: quantity must be more than zero.`);
+    }
+
+    if (!Number.isInteger(rateCents) || rateCents <= 0) {
+      throw new SaleValidationError(`${label}: rate must be more than zero.`);
+    }
+
+    return { position: index, description, qty, rateCents, amountCents: workAmountCents({ qty, rateCents }) };
+  });
+}
+
+function normalizeSaleInput(input: SaleInput) {
+  validateId(input.customerId, "Customer");
+
+  const kind: SaleKind = input.kind ?? "job";
+
+  if (kind !== "job" && kind !== "cash") {
+    throw new SaleValidationError("Bill type must be job or cash.");
+  }
+
+  let saleDate: Date;
+
+  try {
+    saleDate = normalizeEntryDate(input.saleDate, "Sale date");
+  } catch (error) {
+    throw new SaleValidationError(error instanceof Error ? error.message : "Sale date is required.");
+  }
+
+  const jobs = kind === "job" ? normalizeJobs(input) : [];
+  const items = kind === "cash" ? normalizeItems(input) : [];
+  const totalAmountCents = jobs.reduce((sum, job) => sum + job.totalAmountCents, 0) + items.reduce((sum, item) => sum + item.amountCents, 0);
+
+  const advanceCents = input.advanceCents ?? 0;
+  const advanceMethod: PaymentMethod = input.advanceMethod ?? "cash";
+
+  if (!Number.isInteger(advanceCents) || advanceCents < 0) {
+    throw new SaleValidationError("Advance must be an amount of zero or more.");
+  }
+
+  if (advanceCents > totalAmountCents) {
+    throw new SaleValidationError("Advance cannot be more than the bill total.");
+  }
+
+  if (advanceMethod !== "cash" && advanceMethod !== "online") {
+    throw new SaleValidationError("Advance must be received in cash or online.");
+  }
 
   return {
+    kind,
     customerId: input.customerId,
     saleDate,
     notes: nullableTrimmed(input.notes),
     jobs,
-    totalAmountCents: jobs.reduce((sum, job) => sum + job.totalAmountCents, 0),
+    items,
+    totalAmountCents,
+    advanceCents,
+    advanceMethod,
+    advanceReference: nullableTrimmed(input.advanceReference),
   };
 }
 
@@ -154,30 +222,78 @@ export function loadJobsForSales(db: DbClient, saleIds: number[]): Map<number, S
   return bySale;
 }
 
+export function loadItemsForSales(db: DbClient, saleIds: number[]): Map<number, CashSaleItemDto[]> {
+  const bySale = new Map<number, CashSaleItemDto[]>();
+
+  if (saleIds.length === 0) {
+    return bySale;
+  }
+
+  for (const row of db.select().from(cashSaleItems).where(inArray(cashSaleItems.saleId, saleIds)).orderBy(asc(cashSaleItems.position), asc(cashSaleItems.id)).all()) {
+    const list = bySale.get(row.saleId) ?? [];
+    list.push({ id: row.id, position: row.position, description: row.description, qty: row.qty, rateCents: row.rateCents, amountCents: row.amountCents });
+    bySale.set(row.saleId, list);
+  }
+
+  return bySale;
+}
+
+type Advance = { amountCents: number; method: PaymentMethod; narration: string | null };
+
+function loadAdvancesForSales(db: DbClient, saleIds: number[]): Map<number, Advance> {
+  const bySale = new Map<number, Advance>();
+
+  if (saleIds.length === 0) {
+    return bySale;
+  }
+
+  for (const row of db.select().from(payments).where(inArray(payments.saleId, saleIds)).all()) {
+    if (row.saleId !== null) {
+      bySale.set(row.saleId, { amountCents: row.amountCents, method: row.method, narration: row.narration });
+    }
+  }
+
+  return bySale;
+}
+
+const saleColumns = {
+  id: sales.id,
+  billNumber: sales.billNumber,
+  kind: sales.kind,
+  customerId: sales.customerId,
+  customerName: customers.name,
+  customerPhone: customers.phone,
+  saleDate: sales.saleDate,
+  totalAmountCents: sales.totalAmountCents,
+  notes: sales.notes,
+  createdAt: sales.createdAt,
+  updatedAt: sales.updatedAt,
+};
+
+function withAdvance<T extends { totalAmountCents: number }>(row: T, advance: Advance | undefined) {
+  const advanceCents = advance?.amountCents ?? 0;
+
+  return {
+    ...row,
+    advanceCents,
+    advanceMethod: advance?.method ?? null,
+    advanceReference: advance?.narration ?? null,
+    balanceCents: row.totalAmountCents - advanceCents,
+  };
+}
+
 function getSaleDetail(db: DbClient, id: number): SaleDetailDto {
-  const sale = db
-    .select({
-      id: sales.id,
-      billNumber: sales.billNumber,
-      customerId: sales.customerId,
-      customerName: customers.name,
-      customerPhone: customers.phone,
-      saleDate: sales.saleDate,
-      totalAmountCents: sales.totalAmountCents,
-      notes: sales.notes,
-      createdAt: sales.createdAt,
-      updatedAt: sales.updatedAt,
-    })
-    .from(sales)
-    .innerJoin(customers, eq(sales.customerId, customers.id))
-    .where(eq(sales.id, id))
-    .get();
+  const sale = db.select(saleColumns).from(sales).innerJoin(customers, eq(sales.customerId, customers.id)).where(eq(sales.id, id)).get();
 
   if (sale === undefined) {
     throw new SaleValidationError("Bill was not found.");
   }
 
-  return { ...sale, jobs: loadJobsForSales(db, [id]).get(id) ?? [] };
+  return {
+    ...withAdvance(sale, loadAdvancesForSales(db, [id]).get(id)),
+    jobs: loadJobsForSales(db, [id]).get(id) ?? [],
+    items: loadItemsForSales(db, [id]).get(id) ?? [],
+  };
 }
 
 function assertCustomerExists(db: DbClient, customerId: number) {
@@ -194,12 +310,61 @@ function nextBillNumberIn(db: DbClient) {
   return (row?.max ?? 0) + 1;
 }
 
-function writeJobs(tx: DbClient, saleId: number, normalized: NormalizedSale) {
+function nextReceiptNumberIn(db: DbClient) {
+  const row = db.select({ max: sql<number | null>`max(${payments.receiptNumber})` }).from(payments).get();
+
+  return (row?.max ?? 0) + 1;
+}
+
+function writeLines(tx: DbClient, saleId: number, normalized: NormalizedSale) {
   for (const job of normalized.jobs) {
     tx.insert(saleJobs)
       .values({ ...(job as typeof saleJobs.$inferInsert), saleId })
       .run();
   }
+
+  for (const item of normalized.items) {
+    tx.insert(cashSaleItems)
+      .values({ ...item, saleId })
+      .run();
+  }
+}
+
+/**
+ * Keeps the advance taken with a bill in step with it. The advance is an
+ * ordinary payment on the customer's khata, tied to the bill, so the ledger and
+ * payment lists show it; editing the bill keeps its receipt number.
+ */
+function syncAdvance(tx: DbClient, saleId: number, normalized: NormalizedSale) {
+  const existing = tx.select().from(payments).where(eq(payments.saleId, saleId)).get();
+
+  if (normalized.advanceCents === 0) {
+    if (existing !== undefined) {
+      tx.delete(payments).where(eq(payments.saleId, saleId)).run();
+    }
+
+    return;
+  }
+
+  const values = {
+    customerId: normalized.customerId,
+    paymentDate: normalized.saleDate,
+    amountCents: normalized.advanceCents,
+    method: normalized.advanceMethod,
+    narration: normalized.advanceReference,
+    updatedAt: new Date(),
+  };
+
+  if (existing !== undefined) {
+    tx.update(payments).set(values).where(eq(payments.id, existing.id)).run();
+    return;
+  }
+
+  // One millisecond after the bill, so on the khata the advance sits under the bill it was taken with.
+  const createdAt = new Date(Date.now() + 1);
+  tx.insert(payments)
+    .values({ ...values, receiptNumber: nextReceiptNumberIn(tx), saleId, createdAt })
+    .run();
 }
 
 export function getNextBillNumber(databasePath?: string): number {
@@ -213,7 +378,7 @@ export function getNextBillNumber(databasePath?: string): number {
   }
 }
 
-/** Records a bill and its jobs together; if any job is rejected, nothing is saved. */
+/** Records a bill, its lines and any advance together; if anything is rejected, nothing is saved. */
 export function createSale(databasePath: string | undefined, input: SaleInput): SaleDetailDto {
   runMigrations(databasePath);
   const { sqlite, db } = createDb(databasePath);
@@ -228,6 +393,7 @@ export function createSale(databasePath: string | undefined, input: SaleInput): 
         .insert(sales)
         .values({
           billNumber: nextBillNumberIn(tx),
+          kind: normalized.kind,
           customerId: normalized.customerId,
           saleDate: normalized.saleDate,
           totalAmountCents: normalized.totalAmountCents,
@@ -239,7 +405,8 @@ export function createSale(databasePath: string | undefined, input: SaleInput): 
         .returning({ id: sales.id })
         .get();
 
-      writeJobs(tx, inserted.id, normalized);
+      writeLines(tx, inserted.id, normalized);
+      syncAdvance(tx, inserted.id, normalized);
 
       return inserted.id;
     });
@@ -250,17 +417,21 @@ export function createSale(databasePath: string | undefined, input: SaleInput): 
   }
 }
 
-/** Replaces a bill's jobs and details in place; its bill number stays the same. */
+/** Replaces a bill's lines, details and advance in place; its bill number stays the same. */
 export function updateSale(databasePath: string | undefined, id: number, input: SaleInput, actorName?: string | null): SaleDetailDto {
   validateId(id, "Bill");
   runMigrations(databasePath);
   const { sqlite, db } = createDb(databasePath);
 
   try {
-    const normalized = normalizeSaleInput(input);
-
     db.transaction((tx) => {
       const before = getSaleDetail(tx, id);
+      const normalized = normalizeSaleInput({ ...input, kind: input.kind ?? before.kind });
+
+      if (normalized.kind !== before.kind) {
+        throw new SaleValidationError(before.kind === "cash" ? "This is a cash sale bill; edit it from Cash Sale." : "This is a job bill; edit it from Sales.");
+      }
+
       assertCustomerExists(tx, normalized.customerId);
 
       tx.update(sales)
@@ -275,7 +446,14 @@ export function updateSale(databasePath: string | undefined, id: number, input: 
         .run();
 
       tx.delete(saleJobs).where(eq(saleJobs.saleId, id)).run();
-      writeJobs(tx, id, normalized);
+      tx.delete(cashSaleItems).where(eq(cashSaleItems.saleId, id)).run();
+      writeLines(tx, id, normalized);
+      syncAdvance(tx, id, normalized);
+
+      const lineNames = (sale: { jobs: { jobName: string }[]; items: { description: string }[] }) => [
+        ...sale.jobs.map((job) => job.jobName),
+        ...sale.items.map((item) => item.description),
+      ];
 
       tx.insert(auditLogs)
         .values({
@@ -285,8 +463,8 @@ export function updateSale(databasePath: string | undefined, id: number, input: 
           actorName: nullableTrimmed(actorName),
           details: JSON.stringify({
             billNumber: before.billNumber,
-            before: { customerId: before.customerId, totalAmountCents: before.totalAmountCents, jobs: before.jobs.map((job) => job.jobName) },
-            after: { customerId: normalized.customerId, totalAmountCents: normalized.totalAmountCents, jobs: normalized.jobs.map((job) => job.jobName) },
+            before: { customerId: before.customerId, totalAmountCents: before.totalAmountCents, advanceCents: before.advanceCents, lines: lineNames(before) },
+            after: { customerId: normalized.customerId, totalAmountCents: normalized.totalAmountCents, advanceCents: normalized.advanceCents, lines: lineNames(normalized) },
           }),
         })
         .run();
@@ -298,6 +476,7 @@ export function updateSale(databasePath: string | undefined, id: number, input: 
   }
 }
 
+/** Removes a bill with its lines and the advance taken with it. */
 export function deleteSale(databasePath: string | undefined, id: number, actorName?: string | null): void {
   validateId(id, "Bill");
   runMigrations(databasePath);
@@ -307,6 +486,7 @@ export function deleteSale(databasePath: string | undefined, id: number, actorNa
     db.transaction((tx) => {
       const before = getSaleDetail(tx, id);
 
+      tx.delete(payments).where(eq(payments.saleId, id)).run();
       tx.delete(sales).where(eq(sales.id, id)).run();
       tx.insert(auditLogs)
         .values({
@@ -316,9 +496,11 @@ export function deleteSale(databasePath: string | undefined, id: number, actorNa
           actorName: nullableTrimmed(actorName),
           details: JSON.stringify({
             billNumber: before.billNumber,
+            kind: before.kind,
             customerName: before.customerName,
             totalAmountCents: before.totalAmountCents,
-            jobs: before.jobs.map((job) => job.jobName),
+            advanceCents: before.advanceCents,
+            lines: [...before.jobs.map((job) => job.jobName), ...before.items.map((item) => item.description)],
           }),
         })
         .run();
@@ -349,6 +531,10 @@ export function listSales(databasePath?: string, filters: SaleListFilters = {}):
     const start = parseDay(filters.startDate);
     const end = endOfDayExclusive(filters.endDate);
 
+    if (filters.kind) {
+      conditions.push(eq(sales.kind, filters.kind));
+    }
+
     if (filters.customerId !== null && filters.customerId !== undefined) {
       conditions.push(eq(sales.customerId, filters.customerId));
     }
@@ -362,35 +548,24 @@ export function listSales(databasePath?: string, filters: SaleListFilters = {}):
     }
 
     const rows = db
-      .select({
-        id: sales.id,
-        billNumber: sales.billNumber,
-        customerId: sales.customerId,
-        customerName: customers.name,
-        customerPhone: customers.phone,
-        saleDate: sales.saleDate,
-        totalAmountCents: sales.totalAmountCents,
-        notes: sales.notes,
-        createdAt: sales.createdAt,
-        updatedAt: sales.updatedAt,
-      })
+      .select(saleColumns)
       .from(sales)
       .innerJoin(customers, eq(sales.customerId, customers.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(sales.saleDate), desc(sales.billNumber))
       .all();
 
-    const jobsBySale = loadJobsForSales(
-      db,
-      rows.map((row) => row.id),
-    );
+    const ids = rows.map((row) => row.id);
+    const jobsBySale = loadJobsForSales(db, ids);
+    const itemsBySale = loadItemsForSales(db, ids);
+    const advances = loadAdvancesForSales(db, ids);
     const search = filters.search?.trim().toLowerCase() ?? "";
 
     return rows
       .map((row) => {
-        const jobNames = (jobsBySale.get(row.id) ?? []).map((job) => job.jobName);
+        const jobNames = [...(jobsBySale.get(row.id) ?? []).map((job) => job.jobName), ...(itemsBySale.get(row.id) ?? []).map((item) => item.description)];
 
-        return { ...row, jobCount: jobNames.length, jobNames };
+        return { ...withAdvance(row, advances.get(row.id)), jobCount: jobNames.length, jobNames };
       })
       .filter(
         (row) =>

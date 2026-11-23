@@ -42,6 +42,8 @@ describe("dashboard service", () => {
       monthSalesCents: 0,
       monthBillCount: 0,
       monthReceivedCents: 0,
+      monthReceivedCashCents: 0,
+      monthReceivedOnlineCents: 0,
       totalReceivableCents: 0,
       customerCount: 0,
       monthWorkTotals: { rota: 0, gto: 0, cutting: 0, lamination: 0, dye: 0 },
@@ -58,7 +60,8 @@ describe("dashboard service", () => {
     createSale(databasePath, { customerId: ali.id, saleDate: "2026-11-22", jobs: [job({ rota: { qty: 10, rateCents: 1_000 } })] });
     createSale(databasePath, { customerId: bilal.id, saleDate: "2026-11-05", jobs: [job({ gto: { qty: 1, rateCents: 50_000 }, dye: { qty: 2, rateCents: 1_000 } })] });
     createSale(databasePath, { customerId: bilal.id, saleDate: "2026-10-30", jobs: [job({ cutting: { qty: 1, rateCents: 99_999 } })] });
-    recordPayment(databasePath, { customerId: bilal.id, amountCents: 30_000, paymentDate: "2026-11-10" });
+    recordPayment(databasePath, { customerId: bilal.id, amountCents: 20_000, paymentDate: "2026-11-10" });
+    recordPayment(databasePath, { customerId: bilal.id, amountCents: 10_000, paymentDate: "2026-11-11", method: "online", narration: "JazzCash" });
     recordPayment(databasePath, { customerId: bilal.id, amountCents: 1_000, paymentDate: "2026-10-10" });
 
     const summary = getDashboardSummary(databasePath, new Date(2026, 10, 22, 15));
@@ -68,6 +71,8 @@ describe("dashboard service", () => {
     expect(summary.monthSalesCents).toBe(62_000);
     expect(summary.monthBillCount).toBe(2);
     expect(summary.monthReceivedCents).toBe(30_000);
+    expect(summary.monthReceivedCashCents).toBe(20_000);
+    expect(summary.monthReceivedOnlineCents).toBe(10_000);
     expect(summary.monthWorkTotals).toEqual({ rota: 10_000, gto: 50_000, cutting: 0, lamination: 0, dye: 2_000 });
     expect(summary.customerCount).toBe(3);
     expect(summary.topReceivables.map((row) => [row.customerName, row.balanceCents])).toEqual([

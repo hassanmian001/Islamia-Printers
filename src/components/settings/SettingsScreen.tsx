@@ -382,8 +382,12 @@ export default function SettingsScreen() {
                   className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   id="business-phone"
                   onChange={(event) => updateBusinessForm({ phone: event.target.value })}
+                  placeholder="M. Abdul Hafeez | +92 300 0000000; Second name | +92 300 0000000"
                   value={businessForm.phone ?? ""}
                 />
+                <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
+                  Printed at the top of every bill. Separate two contacts with a semicolon (;).
+                </span>
               </label>
               <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="business-email">
                 Email

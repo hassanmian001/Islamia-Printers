@@ -1,9 +1,6 @@
 import DocumentPanel from "@/components/invoices/DocumentPanel";
-import WorkCell from "@/components/invoices/WorkCell";
-import { formatCurrency } from "@/lib/currency";
-import { formatAmount, formatAmountOrBlank } from "@/lib/format";
-import { billDocumentFileName, buildBillHtml, formatDocumentDate } from "@/lib/invoice-document";
-import { workKinds, workLabels } from "@/lib/job-math";
+import { formatQty, formatRate } from "@/lib/format";
+import { billDocumentFileName, billLines, billMoney, buildBillHtml, formatDocumentDate, paymentMethodLabel } from "@/lib/invoice-document";
 import type { BillDocumentDto } from "@/types/stylecraft-api";
 
 type BillPreviewProps = {
@@ -11,54 +8,58 @@ type BillPreviewProps = {
   onClose: () => void;
 };
 
-/** One bill as the customer should see it, ready to print or save as PDF. */
+/** One bill as the customer will get it — Description / Qty / Rate / Amount, then Total, Adv. and Bal. — ready to print or save as PDF. */
 export default function BillPreview({ bill, onClose }: BillPreviewProps) {
+  const lines = billLines(bill);
+
   return (
     <DocumentPanel
       fileName={billDocumentFileName(bill)}
       html={buildBillHtml(bill)}
-      kicker="Bill"
+      kicker={bill.kind === "cash" ? "Cash sale bill" : "Bill"}
       onClose={onClose}
       subtitle={`${formatDocumentDate(bill.saleDate)} — ${bill.customerName}`}
       title={`Bill No. ${bill.billNumber}`}
     >
-      <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
-        <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700 text-left text-sm">
-          <thead className="bg-slate-50 dark:bg-slate-800/60 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+      <div className="overflow-x-auto rounded-2xl border border-rose-900/40">
+        <table className="min-w-full text-left text-sm">
+          <thead className="bg-[#991F36] text-xs uppercase tracking-wide text-white">
             <tr>
-              <th className="px-2 py-2 font-semibold">Job name</th>
-              {workKinds.map((kind) => (
-                <th className="px-2 py-2 text-right font-semibold" key={kind}>
-                  {workLabels[kind]}
-                </th>
-              ))}
-              <th className="px-2 py-2 text-right font-semibold">Grand Total</th>
+              <th className="px-3 py-2 font-semibold">Description</th>
+              <th className="px-3 py-2 text-center font-semibold">Qty.</th>
+              <th className="px-3 py-2 text-center font-semibold">Rate</th>
+              <th className="px-3 py-2 text-center font-semibold">Amount</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {bill.jobs.map((job) => (
-              <tr key={job.id}>
-                <td className="px-2 py-2 font-medium text-slate-950 dark:text-slate-50">{job.jobName}</td>
-                {workKinds.map((kind) => (
-                  <WorkCell charge={job[kind]} key={kind} />
-                ))}
-                <td className="px-2 py-2 text-right font-semibold text-slate-950 dark:text-slate-50">{formatAmount(job.totalAmountCents)}</td>
+          <tbody>
+            {lines.map((line, index) => (
+              <tr key={`${line.description}-${index}`}>
+                <td className={`px-3 py-1.5 ${line.kind === "head" ? "font-semibold text-slate-950 dark:text-slate-50" : line.kind === "sub" ? "pl-8 text-slate-600 dark:text-slate-300" : "text-slate-950 dark:text-slate-50"}`}>
+                  {line.description}
+                </td>
+                <td className="px-3 py-1.5 text-center">{line.qty === null ? "" : formatQty(line.qty)}</td>
+                <td className="px-3 py-1.5 text-center">{line.rateCents === null ? "" : formatRate(line.rateCents)}</td>
+                <td className="px-3 py-1.5 text-center">{line.amountCents === null ? "" : billMoney(line.amountCents)}</td>
               </tr>
             ))}
           </tbody>
-          <tfoot className="bg-slate-50 dark:bg-slate-800/60 font-semibold text-slate-950 dark:text-slate-50">
-            <tr>
-              <td className="px-2 py-2">Total</td>
-              {workKinds.map((kind) => (
-                <td className="px-2 py-2 text-right" key={kind}>
-                  {formatAmountOrBlank(bill.jobs.reduce((sum, job) => sum + job[kind].amountCents, 0))}
-                </td>
-              ))}
-              <td className="px-2 py-2 text-right">{formatCurrency(bill.totalAmountCents, bill.business.currencySymbol)}</td>
-            </tr>
-          </tfoot>
         </table>
       </div>
+
+      <dl className="mt-3 grid gap-1 text-sm md:ml-auto md:w-72">
+        <div className="flex justify-between rounded-lg bg-slate-50 dark:bg-slate-800/60 px-3 py-1.5 font-semibold text-slate-950 dark:text-slate-50">
+          <dt>Total</dt>
+          <dd>{billMoney(bill.totalAmountCents)}</dd>
+        </div>
+        <div className="flex justify-between px-3 py-1.5 text-slate-700 dark:text-slate-200">
+          <dt>Adv.{bill.advanceCents > 0 && bill.advanceMethod ? ` (${paymentMethodLabel(bill.advanceMethod)})` : ""}</dt>
+          <dd>{billMoney(bill.advanceCents)}</dd>
+        </div>
+        <div className="flex justify-between rounded-lg bg-slate-50 dark:bg-slate-800/60 px-3 py-1.5 font-semibold text-slate-950 dark:text-slate-50">
+          <dt>Bal.</dt>
+          <dd data-testid="bill-balance">{billMoney(bill.balanceCents)}</dd>
+        </div>
+      </dl>
       {bill.notes ? <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">Notes: {bill.notes}</p> : null}
     </DocumentPanel>
   );

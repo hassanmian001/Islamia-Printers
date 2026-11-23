@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 
 import { emptyWorkAmounts, sumWorkAmounts, workKinds } from "../src/lib/job-math.js";
 import type {
@@ -10,11 +10,14 @@ import type {
   LedgerSummaryDto,
   PaymentDto,
   PaymentInput,
+  PaymentListFilters,
+  PaymentListItemDto,
+  PaymentMethod,
 } from "../src/types/stylecraft-api.js";
 import { createDb } from "./client.js";
 import { endOfDayExclusive, normalizeEntryDate, parseDay } from "./dates.js";
 import { runMigrations } from "./migrate.js";
-import { loadJobsForSales } from "./sales-service.js";
+import { loadItemsForSales, loadJobsForSales } from "./sales-service.js";
 import { auditLogs, customers, payments, sales } from "./schema.js";
 import { getBusinessSettings } from "./settings-service.js";
 
@@ -37,6 +40,36 @@ function parseFilterDay(value: string | null | undefined) {
   } catch (error) {
     throw new LedgerValidationError(error instanceof Error ? error.message : "Date is not valid.");
   }
+}
+
+function billNumbersFor(db: Db, saleIds: Array<number | null>): Map<number, number> {
+  const ids = [...new Set(saleIds.filter((id): id is number => id !== null))];
+
+  if (ids.length === 0) {
+    return new Map();
+  }
+
+  return new Map(
+    db
+      .select({ id: sales.id, billNumber: sales.billNumber })
+      .from(sales)
+      .where(inArray(sales.id, ids))
+      .all()
+      .map((row) => [row.id, row.billNumber]),
+  );
+}
+
+function toPaymentDto(row: typeof payments.$inferSelect): PaymentDto {
+  return {
+    id: row.id,
+    receiptNumber: row.receiptNumber,
+    customerId: row.customerId,
+    amountCents: row.amountCents,
+    paymentDate: row.paymentDate,
+    method: row.method,
+    narration: row.narration,
+    saleId: row.saleId,
+  };
 }
 
 function customerSummaries(db: Db): LedgerCustomerSummaryDto[] {
@@ -170,18 +203,22 @@ export function getLedgerStatement(databasePath: string | undefined, customerId:
 
     const saleRows = db.select().from(sales).where(and(...saleConditions)).all();
     const paymentRows = db.select().from(payments).where(and(...paymentConditions)).all();
-    const jobsBySale = loadJobsForSales(
+    const saleIds = saleRows.map((row) => row.id);
+    const jobsBySale = loadJobsForSales(db, saleIds);
+    const itemsBySale = loadItemsForSales(db, saleIds);
+    const advanceBills = billNumbersFor(
       db,
-      saleRows.map((row) => row.id),
+      paymentRows.map((row) => row.saleId),
     );
 
     // Same-day entries keep the order they were typed in, so a payment taken
     // before the day's bill shows above it, as on a paper khata.
-    type Pending = { date: Date; createdAt: Date; order: number; build: (balanceCents: number) => LedgerEntryDto & { closingBalanceCents: number } };
+    type Pending = { date: Date; createdAt: Date; rank: number; order: number; build: (balanceCents: number) => LedgerEntryDto & { closingBalanceCents: number } };
     const pending: Pending[] = [
       ...saleRows.map((sale) => ({
         date: sale.saleDate,
         createdAt: sale.createdAt,
+        rank: 0,
         order: sale.id,
         build: (balanceBefore: number) => {
           let running = balanceBefore;
@@ -189,14 +226,20 @@ export function getLedgerStatement(databasePath: string | undefined, customerId:
             running += job.totalAmountCents;
             return { ...job, balanceCents: running };
           });
+          const items = (itemsBySale.get(sale.id) ?? []).map((item) => {
+            running += item.amountCents;
+            return { ...item, balanceCents: running };
+          });
 
           return {
             kind: "bill" as const,
+            saleKind: sale.kind,
             saleId: sale.id,
             billNumber: sale.billNumber,
             date: sale.saleDate,
             notes: sale.notes,
             jobs,
+            items,
             workTotals: sumWorkAmounts(jobs),
             totalAmountCents: sale.totalAmountCents,
             balanceCents: balanceBefore + sale.totalAmountCents,
@@ -207,19 +250,22 @@ export function getLedgerStatement(databasePath: string | undefined, customerId:
       ...paymentRows.map((payment) => ({
         date: payment.paymentDate,
         createdAt: payment.createdAt,
+        rank: 1,
         order: payment.id,
         build: (balanceBefore: number) => ({
           kind: "payment" as const,
           paymentId: payment.id,
           receiptNumber: payment.receiptNumber,
           date: payment.paymentDate,
+          method: payment.method,
           narration: payment.narration,
+          billNumber: payment.saleId === null ? null : (advanceBills.get(payment.saleId) ?? null),
           amountCents: payment.amountCents,
           balanceCents: balanceBefore - payment.amountCents,
           closingBalanceCents: balanceBefore - payment.amountCents,
         }),
       })),
-    ].sort((left, right) => left.date.getTime() - right.date.getTime() || left.createdAt.getTime() - right.createdAt.getTime() || left.order - right.order);
+    ].sort((left, right) => left.date.getTime() - right.date.getTime() || left.createdAt.getTime() - right.createdAt.getTime() || left.rank - right.rank || left.order - right.order);
 
     let balanceCents = openingBalanceCents;
     const entries: LedgerEntryDto[] = pending.map((item) => {
@@ -288,6 +334,12 @@ export function recordPayment(databasePath: string | undefined, input: PaymentIn
     throw new LedgerValidationError("Payment amount must be more than zero.");
   }
 
+  const method: PaymentMethod = input.method ?? "cash";
+
+  if (method !== "cash" && method !== "online") {
+    throw new LedgerValidationError("Payment must be received in cash or online.");
+  }
+
   let paymentDate: Date;
 
   try {
@@ -314,6 +366,7 @@ export function recordPayment(databasePath: string | undefined, input: PaymentIn
           customerId: input.customerId,
           paymentDate,
           amountCents: input.amountCents,
+          method,
           narration: nullableTrimmed(input.narration),
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -322,14 +375,56 @@ export function recordPayment(databasePath: string | undefined, input: PaymentIn
         .get();
     });
 
-    return {
-      id: row.id,
-      receiptNumber: row.receiptNumber,
-      customerId: row.customerId,
-      amountCents: row.amountCents,
-      paymentDate: row.paymentDate,
-      narration: row.narration,
-    };
+    return toPaymentDto(row);
+  } finally {
+    sqlite.close();
+  }
+}
+
+/** Every payment received, newest first, with whose it is and the bill an advance was taken with. */
+export function listPayments(databasePath?: string, filters: PaymentListFilters = {}): PaymentListItemDto[] {
+  const start = parseFilterDay(filters.startDate).start;
+  const end = parseFilterDay(filters.endDate).end;
+
+  runMigrations(databasePath);
+  const { sqlite, db } = createDb(databasePath);
+
+  try {
+    const conditions = [];
+
+    if (filters.customerId !== null && filters.customerId !== undefined) {
+      conditions.push(eq(payments.customerId, filters.customerId));
+    }
+
+    if (filters.method) {
+      conditions.push(eq(payments.method, filters.method));
+    }
+
+    if (start !== null) {
+      conditions.push(gte(payments.paymentDate, start));
+    }
+
+    if (end !== null) {
+      conditions.push(lt(payments.paymentDate, end));
+    }
+
+    const rows = db
+      .select({ payment: payments, customerName: customers.name })
+      .from(payments)
+      .innerJoin(customers, eq(payments.customerId, customers.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(payments.paymentDate), desc(payments.receiptNumber))
+      .all();
+    const bills = billNumbersFor(
+      db,
+      rows.map((row) => row.payment.saleId),
+    );
+
+    return rows.map((row) => ({
+      ...toPaymentDto(row.payment),
+      customerName: row.customerName,
+      billNumber: row.payment.saleId === null ? null : (bills.get(row.payment.saleId) ?? null),
+    }));
   } finally {
     sqlite.close();
   }
@@ -347,6 +442,11 @@ export function deletePayment(databasePath: string | undefined, id: number, acto
         throw new LedgerValidationError("Payment was not found.");
       }
 
+      // An advance belongs to its bill; it is changed or removed by editing that bill.
+      if (row.saleId !== null) {
+        throw new LedgerValidationError("This is the advance taken with a bill. Edit the bill to change or remove it.");
+      }
+
       tx.delete(payments).where(eq(payments.id, id)).run();
       tx.insert(auditLogs)
         .values({
@@ -354,7 +454,7 @@ export function deletePayment(databasePath: string | undefined, id: number, acto
           entityType: "payment",
           entityId: id,
           actorName: nullableTrimmed(actorName),
-          details: JSON.stringify({ receiptNumber: row.receiptNumber, customerId: row.customerId, amountCents: row.amountCents, narration: row.narration }),
+          details: JSON.stringify({ receiptNumber: row.receiptNumber, customerId: row.customerId, amountCents: row.amountCents, method: row.method, narration: row.narration }),
         })
         .run();
     });

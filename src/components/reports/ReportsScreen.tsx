@@ -23,20 +23,26 @@ export function buildSalesCsv(report: ReportsDto) {
   const columns = [
     "Date",
     "Bill No",
+    "Type",
     "Customer",
-    "Job name",
+    "Job / description",
     ...workKinds.flatMap((kind) => [`${workLabels[kind]} qty`, `${workLabels[kind]} rate`, `${workLabels[kind]} amount`]),
+    "Qty",
+    "Rate",
     "Grand Total",
   ];
   const rows = report.rows.map((row) => [
     formatDate(row.saleDate),
     row.billNumber,
+    row.saleKind === "cash" ? "Cash sale" : "Job",
     row.customerName,
     row.jobName,
     ...workKinds.flatMap((kind) => [row[kind].qty, plain(row[kind].rateCents), plain(row[kind].amountCents)]),
+    row.saleKind === "cash" ? row.qty : "",
+    row.saleKind === "cash" ? plain(row.rateCents) : "",
     plain(row.totalAmountCents),
   ]);
-  const totals = ["", "", "", "Total", ...workKinds.flatMap((kind) => ["", "", plain(report.workTotals[kind])]), plain(report.salesTotalCents)];
+  const totals = ["", "", "", "", "Total", ...workKinds.flatMap((kind) => ["", "", plain(report.workTotals[kind])]), "", "", plain(report.salesTotalCents)];
 
   return [columns, ...rows, totals].map((row) => row.map(escapeCsvValue).join(",")).join("\n");
 }
@@ -55,7 +61,7 @@ function buildReportHtml(report: ReportsDto, period: string) {
   const rows = report.rows
     .map(
       (row) =>
-        `<tr><td>${escapeHtml(formatDate(row.saleDate))}</td><td>${row.billNumber}</td><td>${escapeHtml(row.customerName)}</td><td>${escapeHtml(row.jobName)}</td>${workKinds
+        `<tr><td>${escapeHtml(formatDate(row.saleDate))}</td><td>${row.billNumber}</td><td>${escapeHtml(row.customerName)}</td><td>${escapeHtml(row.jobName)}${row.saleKind === "cash" ? `<div class="sub">Cash sale · ${escapeHtml(formatQty(row.qty))} × ${escapeHtml(formatAmount(row.rateCents))}</div>` : ""}</td>${workKinds
           .map((kind) =>
             row[kind].amountCents === 0
               ? "<td></td>"
@@ -162,8 +168,16 @@ export default function ReportsScreen() {
       {report ? (
         <>
           <div className="grid gap-3 md:grid-cols-4">
-            <SummaryCard label="Sales" value={formatCurrency(report.salesTotalCents)} detail={`${report.billCount} bills · ${report.jobCount} jobs`} />
-            <SummaryCard label="Received" value={formatCurrency(report.receivedCents)} detail="Payments in this period" />
+            <SummaryCard
+              label="Sales"
+              value={formatCurrency(report.salesTotalCents)}
+              detail={`${report.billCount} bills · ${report.jobCount} lines · cash sales ${formatCurrency(report.cashSalesCents)}`}
+            />
+            <SummaryCard
+              label="Received"
+              value={formatCurrency(report.receivedCents)}
+              detail={`Cash ${formatCurrency(report.receivedCashCents)} · Online ${formatCurrency(report.receivedOnlineCents)}`}
+            />
             <SummaryCard label="Difference" value={formatCurrency(report.salesTotalCents - report.receivedCents)} detail="Sales minus received" />
             <SummaryCard label="Period" value={period} detail={customerId ? (customers.find((customer) => customer.id === customerId)?.name ?? "") : "All customers"} />
           </div>
@@ -208,7 +222,14 @@ export default function ReportsScreen() {
                       <td className="whitespace-nowrap px-2 py-2">{formatDate(row.saleDate)}</td>
                       <td className="px-2 py-2">{row.billNumber}</td>
                       <td className="px-2 py-2">{row.customerName}</td>
-                      <td className="px-2 py-2 font-medium text-slate-950 dark:text-slate-50">{row.jobName}</td>
+                      <td className="px-2 py-2 font-medium text-slate-950 dark:text-slate-50">
+                        {row.jobName}
+                        {row.saleKind === "cash" ? (
+                          <div className="text-[11px] font-normal text-slate-500 dark:text-slate-400">
+                            Cash sale · {formatQty(row.qty)} × {formatAmount(row.rateCents)}
+                          </div>
+                        ) : null}
+                      </td>
                       {workKinds.map((kind) => (
                         <WorkCell charge={row[kind]} key={kind} />
                       ))}

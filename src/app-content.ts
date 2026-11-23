@@ -1,6 +1,6 @@
-export type SectionId = "dashboard" | "sales" | "ledger" | "contacts" | "reports" | "settings";
+export type SectionId = "dashboard" | "sales" | "cash" | "payments" | "ledger" | "contacts" | "reports" | "settings";
 
-export type IconName = "dashboard" | "contacts" | "sales" | "ledger" | "reports" | "settings" | "chart";
+export type IconName = "dashboard" | "contacts" | "sales" | "cash" | "payments" | "ledger" | "reports" | "settings" | "chart";
 
 export type Section = {
   id: SectionId;
@@ -27,6 +27,18 @@ export const sections: Section[] = [
     label: "Sales",
     description: "Enter a bill: date, customer and each job's Rota, GTO, cutting, lamination and dye charges.",
     icon: "sales",
+  },
+  {
+    id: "cash",
+    label: "Cash Sale",
+    description: "A counter sale written like the bill book: description, qty, rate, with advance (cash or online) and balance.",
+    icon: "cash",
+  },
+  {
+    id: "payments",
+    label: "Payment Received",
+    description: "Money received from a party, in cash or online, credited to their khata.",
+    icon: "payments",
   },
   {
     id: "ledger",
@@ -62,6 +74,14 @@ export const moduleCards: Record<SectionId, ModuleCard[]> = {
   sales: [
     { title: "Bill entry", description: "One bill per customer, one line per job.", icon: "sales" },
     { title: "Qty x rate", description: "Each kind of work is charged as quantity times rate.", icon: "chart" },
+  ],
+  cash: [
+    { title: "Bill book entry", description: "Description, qty and rate, like the printed bill.", icon: "cash" },
+    { title: "Advance and balance", description: "Advance taken in cash or online; the balance stays on the khata.", icon: "payments" },
+  ],
+  payments: [
+    { title: "Receipts", description: "Every payment gets its own CR number.", icon: "payments" },
+    { title: "Cash or online", description: "See how much came in by each.", icon: "chart" },
   ],
   ledger: [
     { title: "Statement of account", description: "Opening balance, bills with sub-totals, payments and running balance.", icon: "ledger" },

@@ -38,12 +38,14 @@ export function getDashboardSummary(databasePath?: string, now = new Date()): Da
     const today = salesBetween(startOfDay(now), startOfNextDay(now));
     const month = salesBetween(startOfMonth(now), startOfNextMonth(now));
 
-    const monthReceivedCents =
-      db
-        .select({ total: sql<number>`coalesce(sum(${payments.amountCents}), 0)` })
-        .from(payments)
-        .where(and(gte(payments.paymentDate, startOfMonth(now)), lt(payments.paymentDate, startOfNextMonth(now))))
-        .get()?.total ?? 0;
+    const receivedByMethod = db
+      .select({ method: payments.method, total: sql<number>`coalesce(sum(${payments.amountCents}), 0)` })
+      .from(payments)
+      .where(and(gte(payments.paymentDate, startOfMonth(now)), lt(payments.paymentDate, startOfNextMonth(now))))
+      .groupBy(payments.method)
+      .all();
+    const monthReceivedCashCents = receivedByMethod.find((row) => row.method === "cash")?.total ?? 0;
+    const monthReceivedOnlineCents = receivedByMethod.find((row) => row.method === "online")?.total ?? 0;
 
     const workRow = db
       .select({
@@ -71,7 +73,9 @@ export function getDashboardSummary(databasePath?: string, now = new Date()): Da
       todayBillCount: today.count,
       monthSalesCents: month.total,
       monthBillCount: month.count,
-      monthReceivedCents,
+      monthReceivedCents: monthReceivedCashCents + monthReceivedOnlineCents,
+      monthReceivedCashCents,
+      monthReceivedOnlineCents,
       totalReceivableCents: ledger.totalReceivableCents,
       customerCount: ledger.customers.length,
       monthWorkTotals,

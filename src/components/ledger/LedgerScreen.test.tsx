@@ -70,7 +70,7 @@ describe("LedgerScreen", () => {
     expect(within(statement).getByText("1,000 × 2")).toBeInTheDocument();
     expect(within(statement).getByText(/Sub-Total/)).toBeInTheDocument();
     expect(within(statement).getByText("1003 CR")).toBeInTheDocument();
-    expect(within(statement).getByText("mzn")).toBeInTheDocument();
+    expect(within(statement).getByText("Cash · mzn")).toBeInTheDocument();
     expect(within(statement).getByText("Grand Total")).toBeInTheDocument();
     expect(within(statement).getAllByText("161,141").length).toBeGreaterThan(0);
   });
@@ -110,7 +110,7 @@ describe("LedgerScreen", () => {
     fireEvent.change(screen.getByLabelText("Narration"), { target: { value: "mzn" } });
     fireEvent.click(screen.getByRole("button", { name: "Save payment" }));
 
-    await waitFor(() => expect(api.ledger.recordPayment).toHaveBeenCalledWith({ customerId: 1, amountCents: 2_000_000, paymentDate: "2026-11-20", narration: "mzn" }));
+    await waitFor(() => expect(api.ledger.recordPayment).toHaveBeenCalledWith({ customerId: 1, amountCents: 2_000_000, paymentDate: "2026-11-20", method: "cash", narration: "mzn" }));
     expect(await screen.findByText(/Receipt 1004 CR saved/)).toBeInTheDocument();
   });
 
@@ -137,5 +137,18 @@ describe("LedgerScreen", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Delete" }).at(-1)!);
 
     await waitFor(() => expect(api.ledger.deletePayment).toHaveBeenCalledWith(3, "secret"));
+  });
+
+  it("records an online payment", async () => {
+    render(<LedgerScreen />);
+    fireEvent.click(await screen.findByText("Islamia Press"));
+    await screen.findByText(/receipt 1004 CR/);
+
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "5000" } });
+    fireEvent.click(screen.getByLabelText("Online"));
+    fireEvent.change(screen.getByLabelText("Online detail"), { target: { value: "Meezan TID 9" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save payment" }));
+
+    await waitFor(() => expect(api.ledger.recordPayment).toHaveBeenCalledWith(expect.objectContaining({ amountCents: 500_000, method: "online", narration: "Meezan TID 9" })));
   });
 });

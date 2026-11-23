@@ -7,9 +7,9 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createDb } from "./client";
 import { createCustomer, listCustomers } from "./contacts-service";
-import { getLedgerStatement } from "./ledger-service";
+import { getLedgerStatement, listPayments } from "./ledger-service";
 import { runMigrations } from "./migrate";
-import { createSale } from "./sales-service";
+import { createSale, listSales } from "./sales-service";
 
 const tempDirs: string[] = [];
 
@@ -29,13 +29,13 @@ const firstJobSalesMigrationTag = "0005_drop_inventory_tables";
  * migrations, so the database ends up where an installed copy of that version
  * sits, including the bookkeeping that stops them re-running.
  */
-function migrateToStockApp(databasePath: string) {
+function migrateToStockApp(databasePath: string, stopBeforeTag = firstJobSalesMigrationTag) {
   const source = path.resolve("drizzle");
   const journal: Journal = JSON.parse(fs.readFileSync(path.join(source, "meta/_journal.json"), "utf8"));
-  const cutoff = journal.entries.findIndex((entry) => entry.tag === firstJobSalesMigrationTag);
+  const cutoff = journal.entries.findIndex((entry) => entry.tag === stopBeforeTag);
 
   if (cutoff === -1) {
-    throw new Error(`Migration ${firstJobSalesMigrationTag} is missing.`);
+    throw new Error(`Migration ${stopBeforeTag} is missing.`);
   }
 
   const previous = journal.entries.slice(0, cutoff);
@@ -112,7 +112,7 @@ describe("upgrading from the stock app", () => {
 
     runMigrations(databasePath);
 
-    expect(tableNames(databasePath)).toEqual(["audit_logs", "customers", "payments", "sale_jobs", "sales", "settings"]);
+    expect(tableNames(databasePath)).toEqual(["audit_logs", "cash_sale_items", "customers", "payments", "sale_jobs", "sales", "settings"]);
     expect(listCustomers(databasePath)).toEqual([]);
   });
 
@@ -148,6 +148,28 @@ describe("upgrading from the stock app", () => {
 
     runMigrations(databasePath);
 
-    expect(tableNames(databasePath)).toEqual(["audit_logs", "customers", "payments", "sale_jobs", "sales", "settings"]);
+    expect(tableNames(databasePath)).toEqual(["audit_logs", "cash_sale_items", "customers", "payments", "sale_jobs", "sales", "settings"]);
+  });
+
+  it("keeps v1.1 bills and payments when cash sales arrive, as job bills and cash payments", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "islamia-v11-"));
+    tempDirs.push(dir);
+    const databasePath = path.join(dir, "test.sqlite");
+    migrateToStockApp(databasePath, "0007_cash_sales_and_payment_method");
+
+    const db = new Database(databasePath);
+    db.exec(`
+      INSERT INTO customers (id, name, opening_balance_cents) VALUES (1, 'Ali', 0);
+      INSERT INTO sales (id, bill_number, customer_id, sale_date, total_amount_cents) VALUES (1, 1, 1, 1795000000000, 50000);
+      INSERT INTO sale_jobs (sale_id, job_name, rota_qty, rota_rate_cents, rota_amount_cents, total_amount_cents) VALUES (1, 'Cards', 100, 500, 50000, 50000);
+      INSERT INTO payments (receipt_number, customer_id, payment_date, amount_cents, narration) VALUES (1, 1, 1795100000000, 20000, 'mzn');
+    `);
+    db.close();
+
+    runMigrations(databasePath);
+
+    expect(listSales(databasePath)[0]).toMatchObject({ kind: "job", billNumber: 1, advanceCents: 0, balanceCents: 50000 });
+    expect(listPayments(databasePath)[0]).toMatchObject({ method: "cash", narration: "mzn", saleId: null });
+    expect(getLedgerStatement(databasePath, 1).closingBalanceCents).toBe(30000);
   });
 });

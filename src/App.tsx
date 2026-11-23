@@ -1,10 +1,12 @@
-import { BarChart3, FileText, LayoutDashboard, Moon, NotebookText, Settings, ShoppingCart, Sun, Users } from "lucide-react";
+import { BarChart3, Banknote, FileText, HandCoins, LayoutDashboard, Moon, NotebookText, Settings, ShoppingCart, Sun, Users } from "lucide-react";
 import { useState } from "react";
 
 import { moduleCards, sections, type IconName, type SectionId } from "@/app-content";
 import ContactsScreen from "@/components/contacts/ContactsScreen";
 import DashboardScreen from "@/components/dashboard/DashboardScreen";
 import LedgerScreen from "@/components/ledger/LedgerScreen";
+import PaymentsScreen from "@/components/payments/PaymentsScreen";
+import CashSaleScreen from "@/components/sales/CashSaleScreen";
 import ReportsScreen from "@/components/reports/ReportsScreen";
 import SalesScreen from "@/components/sales/SalesScreen";
 import SettingsScreen from "@/components/settings/SettingsScreen";
@@ -17,7 +19,9 @@ const icons = {
   chart: BarChart3,
   contacts: Users,
   dashboard: LayoutDashboard,
+  cash: Banknote,
   ledger: NotebookText,
+  payments: HandCoins,
   reports: FileText,
   sales: ShoppingCart,
   settings: Settings,
@@ -90,6 +94,10 @@ export default function App() {
                 <ContactsScreen />
               ) : activeSection.id === "sales" ? (
                 <SalesScreen />
+              ) : activeSection.id === "cash" ? (
+                <CashSaleScreen />
+              ) : activeSection.id === "payments" ? (
+                <PaymentsScreen />
               ) : activeSection.id === "ledger" ? (
                 <LedgerScreen />
               ) : activeSection.id === "reports" ? (

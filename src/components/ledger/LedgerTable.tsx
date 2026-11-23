@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import WorkCell from "@/components/invoices/WorkCell";
-import { formatAmount, formatAmountOrBlank, formatDate } from "@/lib/format";
-import { billNumberLabel, receiptNumberLabel } from "@/lib/invoice-document";
+import { formatAmount, formatAmountOrBlank, formatDate, formatQty, formatRate } from "@/lib/format";
+import { billNumberLabel, paymentNarration, receiptNumberLabel } from "@/lib/invoice-document";
 import { workKinds, workLabels } from "@/lib/job-math";
 import type { LedgerStatementDto } from "@/types/stylecraft-api";
 
@@ -55,14 +55,14 @@ export default function LedgerTable({ statement, onViewBill, onDeletePayment }: 
               <tr className="bg-green-50/60 dark:bg-green-950/20" key={`payment-${entry.paymentId}`}>
                 <td className={`${cell} whitespace-nowrap`}>{formatDate(entry.date)}</td>
                 <td className={`${cell} whitespace-nowrap`}>{receiptNumberLabel(entry.receiptNumber)}</td>
-                <td className={cell}>{entry.narration ?? "Payment received"}</td>
+                <td className={cell}>{paymentNarration(entry)}</td>
                 {emptyWork}
                 <td className={cell} />
                 <td className={`${num} font-medium text-green-700 dark:text-green-400`}>{formatAmount(entry.amountCents)}</td>
                 <td className={`${num} font-semibold`}>{formatAmount(entry.balanceCents)}</td>
                 {hasActions ? (
                   <td className={cell}>
-                    {onDeletePayment ? (
+                    {onDeletePayment && entry.billNumber === null ? (
                       <Button onClick={() => onDeletePayment(entry.paymentId, entry.receiptNumber)} size="sm" type="button" variant="ghost">
                         Delete
                       </Button>
@@ -72,10 +72,35 @@ export default function LedgerTable({ statement, onViewBill, onDeletePayment }: 
               </tr>
             ) : (
               [
+                ...entry.items.map((item, index) => (
+                  <tr key={`item-${item.id}`}>
+                    <td className={`${cell} whitespace-nowrap`}>{formatDate(entry.date)}</td>
+                    <td className={`${cell} whitespace-nowrap`}>{billNumberLabel(entry.billNumber, entry.saleKind)}</td>
+                    <td className={cell}>
+                      <div className="font-medium text-slate-950 dark:text-slate-50">{item.description}</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                        {formatQty(item.qty)} × {formatRate(item.rateCents)}
+                      </div>
+                    </td>
+                    {emptyWork}
+                    <td className={num}>{formatAmount(item.amountCents)}</td>
+                    <td className={cell} />
+                    <td className={num}>{formatAmount(item.balanceCents)}</td>
+                    {hasActions ? (
+                      <td className={cell}>
+                        {index === 0 && onViewBill ? (
+                          <Button onClick={() => onViewBill(entry.saleId)} size="sm" type="button" variant="ghost">
+                            View
+                          </Button>
+                        ) : null}
+                      </td>
+                    ) : null}
+                  </tr>
+                )),
                 ...entry.jobs.map((job, index) => (
                   <tr key={`job-${job.id}`}>
                     <td className={`${cell} whitespace-nowrap`}>{formatDate(entry.date)}</td>
-                    <td className={`${cell} whitespace-nowrap`}>{billNumberLabel(entry.billNumber)}</td>
+                    <td className={`${cell} whitespace-nowrap`}>{billNumberLabel(entry.billNumber, entry.saleKind)}</td>
                     <td className={`${cell} font-medium text-slate-950 dark:text-slate-50`}>{job.jobName}</td>
                     {workKinds.map((kind) => (
                       <WorkCell charge={job[kind]} key={kind} />

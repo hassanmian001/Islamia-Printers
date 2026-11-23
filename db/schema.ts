@@ -30,13 +30,16 @@ export const customers = sqliteTable(
   }),
 );
 
-// One sale bill (a voucher, "V.No" on the khata). It belongs to one customer
-// and carries one or more jobs; its total is the sum of their totals.
+// One sale bill (a voucher, "V.No" on the khata). It belongs to one customer.
+// A "job" bill carries printing jobs (sale_jobs); a "cash" bill carries plain
+// description / qty / rate lines (cash_sale_items). Either way its total is the
+// sum of its lines, and both kinds share one run of bill numbers.
 export const sales = sqliteTable(
   "sales",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     billNumber: integer("bill_number").notNull(),
+    kind: text("kind", { enum: ["job", "cash"] }).notNull().default("job"),
     customerId: integer("customer_id")
       .notNull()
       .references(() => customers.id, { onDelete: "restrict" }),
@@ -90,7 +93,32 @@ export const saleJobs = sqliteTable(
   }),
 );
 
+// One line of a cash sale bill: description, quantity x rate = amount.
+export const cashSaleItems = sqliteTable(
+  "cash_sale_items",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    saleId: integer("sale_id")
+      .notNull()
+      .references(() => sales.id, { onDelete: "cascade" }),
+    position: integer("position").notNull().default(0),
+    description: text("description").notNull(),
+    qty: real("qty").notNull().default(0),
+    rateCents: integer("rate_cents").notNull().default(0),
+    amountCents: integer("amount_cents").notNull().default(0),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => ({
+    saleIdx: index("cash_sale_items_sale_id_idx").on(table.saleId),
+  }),
+);
+
 // Money received from a customer ("CR" on the khata), with its own receipt number.
+// method is how it came in (cash in hand or online transfer); narration holds the
+// detail (JazzCash, bank, TID...). saleId is set when the money is the advance
+// taken on a bill: it then belongs to that bill and is changed by editing the bill.
 export const payments = sqliteTable(
   "payments",
   {
@@ -101,13 +129,16 @@ export const payments = sqliteTable(
       .references(() => customers.id, { onDelete: "restrict" }),
     paymentDate: integer("payment_date", { mode: "timestamp_ms" }).notNull(),
     amountCents: integer("amount_cents").notNull(),
+    method: text("method", { enum: ["cash", "online"] }).notNull().default("cash"),
     narration: text("narration"),
+    saleId: integer("sale_id").references(() => sales.id, { onDelete: "cascade" }),
     ...timestamps,
   },
   (table) => ({
     receiptNumberIdx: uniqueIndex("payments_receipt_number_unique").on(table.receiptNumber),
     customerIdx: index("payments_customer_id_idx").on(table.customerId),
     dateIdx: index("payments_payment_date_idx").on(table.paymentDate),
+    saleIdx: index("payments_sale_id_idx").on(table.saleId),
   }),
 );
 
@@ -138,4 +169,4 @@ export const auditLogs = sqliteTable(
   }),
 );
 
-export const schemaTableNames = ["audit_logs", "customers", "payments", "sale_jobs", "sales", "settings"] as const;
+export const schemaTableNames = ["audit_logs", "cash_sale_items", "customers", "payments", "sale_jobs", "sales", "settings"] as const;

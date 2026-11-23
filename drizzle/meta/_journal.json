@@ -50,6 +50,13 @@
       "when": 1795352155188,
       "tag": "0006_job_sales_and_khata",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1795426759451,
+      "tag": "0007_cash_sales_and_payment_method",
+      "breakpoints": true
     }
   ]
 }

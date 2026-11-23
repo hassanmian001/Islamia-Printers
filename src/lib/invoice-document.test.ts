@@ -1,27 +1,58 @@
 import { describe, expect, it } from "vitest";
 
-import { billDocumentFileName, buildBillHtml, buildLedgerHtml, escapeHtml, ledgerDocumentFileName } from "./invoice-document";
+import { billDocumentFileName, billLines, billNumberLabel, buildBillHtml, buildLedgerHtml, escapeHtml, ledgerDocumentFileName, paymentNarration } from "./invoice-document";
 import { billDocument, charge, ledgerStatement, saleJob } from "@/test/mock-api";
 
 describe("bill document", () => {
-  it("lists every job with each kind of work as qty x rate and the bill total", () => {
+  it("prints like the bill book: Date, Sr., Name, Description / Qty / Rate / Amount, Total, Adv. and Bal.", () => {
     const html = buildBillHtml(
       billDocument({
-        jobs: [saleJob({ jobName: "Visiting cards" }), saleJob({ id: 2, jobName: "Letterhead", rota: charge(0, 0), cutting: charge(0, 0), gto: charge(2.5, 120_000) })],
-        totalAmountCents: 505_000,
+        kind: "cash",
+        jobs: [],
+        items: [{ id: 1, position: 0, description: "700g UV Round Corner Matt Card (500x2)", qty: 1000, rateCents: 1_300, amountCents: 1_300_000 }],
+        totalAmountCents: 1_300_000,
+        advanceCents: 650_000,
+        advanceMethod: "online",
+        balanceCents: 650_000,
+        saleDate: new Date(2025, 4, 7),
         notes: "Deliver Friday",
+        business: { ...billDocument().business, phone: "Owner One | +92 300 1111111; Owner Two | +92 300 2222222" },
       }),
     );
 
-    expect(html).toContain("Bill No. 15");
-    expect(html).toContain("Islamia Press");
-    expect(html).toContain("Visiting cards");
-    expect(html).toContain("1,000 × 2");
-    expect(html).toContain("2.5 × 1,200");
-    expect(html).toContain("Rota P");
-    expect(html).toContain("Lamination");
-    expect(html).toContain("Rs. 5,050.00");
+    expect(html).toContain('<span class="islamia">ISLAMIA</span><span class="printers">PRINTERS</span>');
+    expect(html).toContain("07-05-2025");
+    expect(html).toContain(">015<");
+    expect(html).toContain("Islamia Press (0300-6609031)");
+    expect(html).toContain("DESCRIPTION");
+    expect(html).toContain("700g UV Round Corner Matt Card (500x2)");
+    expect(html).toContain(">1,000<");
+    expect(html).toContain(">13<");
+    expect(html).toContain("13,000/-");
+    expect(html).toContain("TOTAL");
+    expect(html).toContain("ADV.");
+    expect(html).toContain("ONLINE");
+    expect(html).toContain("6,500/-");
+    expect(html).toContain("BAL.");
+    expect(html).toContain("Owner One | +92 300 1111111");
+    expect(html).toContain("Owner Two | +92 300 2222222");
+    expect(html).toContain("Signature");
     expect(html).toContain("Deliver Friday");
+  });
+
+  it("turns a job into Description / Qty / Rate / Amount lines", () => {
+    const lines = billLines(
+      billDocument({
+        jobs: [saleJob({ jobName: "Visiting cards" }), saleJob({ id: 2, jobName: "Letterhead", rota: charge(0, 0), cutting: charge(0, 0), gto: charge(2.5, 120_000) })],
+      }),
+    );
+
+    expect(lines).toEqual([
+      { kind: "head", description: "Visiting cards", qty: null, rateCents: null, amountCents: null },
+      { kind: "sub", description: "Rota P", qty: 1000, rateCents: 200, amountCents: 200_000 },
+      { kind: "sub", description: "Cutting", qty: 1, rateCents: 5_000, amountCents: 5_000 },
+      { kind: "line", description: "Letterhead — GTO P", qty: 2.5, rateCents: 120_000, amountCents: 300_000 },
+    ]);
   });
 
   it("escapes what the shop typed", () => {
@@ -33,6 +64,13 @@ describe("bill document", () => {
 
   it("names the file after the bill and customer", () => {
     expect(billDocumentFileName(billDocument())).toBe("Bill 15 Islamia Press");
+  });
+
+  it("describes a payment: advance or not, cash or online, and its detail", () => {
+    expect(paymentNarration({ method: "online", narration: "JazzCash TID 1", billNumber: 16 })).toBe("Advance (Bill 16) · Online · JazzCash TID 1");
+    expect(paymentNarration({ method: "cash", narration: null, billNumber: null })).toBe("Cash");
+    expect(billNumberLabel(16, "cash")).toBe("16 CS");
+    expect(billNumberLabel(15)).toBe("15 SV");
   });
 });
 

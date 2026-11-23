@@ -1,6 +1,6 @@
 import type { IpcMain } from "electron";
 
-import type { LedgerFilters, PaymentInput } from "../src/types/stylecraft-api.js";
+import type { LedgerFilters, PaymentInput, PaymentListFilters } from "../src/types/stylecraft-api.js";
 export { ledgerChannels } from "./ipc-channels.js";
 import { ledgerChannels } from "./ipc-channels.js";
 
@@ -27,6 +27,12 @@ export function registerLedgerHandlers(ipcMain: IpcMain) {
     const [{ getDatabasePath }, { recordPayment }] = await Promise.all([import("../db/paths.js"), import("../db/ledger-service.js")]);
 
     return recordPayment(getDatabasePath(), input);
+  });
+
+  ipcMain.handle(ledgerChannels.listPayments, async (_event, filters?: PaymentListFilters) => {
+    const [{ getDatabasePath }, { listPayments }] = await Promise.all([import("../db/paths.js"), import("../db/ledger-service.js")]);
+
+    return listPayments(getDatabasePath(), filters);
   });
 
   // Removing a payment changes what a customer owes, so it sits behind the edit password.

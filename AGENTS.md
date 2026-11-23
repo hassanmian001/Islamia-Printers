@@ -29,7 +29,8 @@ and `docs/` describe the old scope and no longer apply; do not reintroduce them.
 
 Important rules:
 
-- A sale bill belongs to one customer and holds one or more jobs.
+- A sale bill belongs to one customer. A job bill holds printing jobs; a cash sale bill holds description / qty / rate lines. Both share bill numbers.
+- An advance taken with a bill is a payment tied to it (`payments.sale_id`), cash or online; it changes only through the bill.
 - Each job is charged for Rota P, GTO P, Cutting, Lamination and Dye, each as quantity x rate; the job's Grand Total is their sum (`src/lib/job-math.ts`).
 - A customer's balance is opening balance + bills - payments received. Every bill and payment shows on their ledger.
 - Use database transactions when saving a bill and its jobs.

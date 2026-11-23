@@ -55,6 +55,7 @@ export const ledgerChannels = {
   getStatement: "ledger:getStatement",
   nextReceiptNumber: "ledger:nextReceiptNumber",
   recordPayment: "ledger:recordPayment",
+  listPayments: "ledger:listPayments",
   deletePayment: "ledger:deletePayment",
 } as const;
 

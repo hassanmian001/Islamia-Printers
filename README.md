@@ -18,6 +18,26 @@ There is no product list, stock, purchase, supplier or return tracking. Those we
 - Bills can be viewed, printed and saved as PDF, edited and deleted. Editing and deleting ask for the edit password when one is set in Settings, checked in the main process, and leave an audit-log entry.
 - Bill history can be filtered by customer, date range, and bill number / customer / job name.
 
+## Cash Sale
+
+- A counter sale written like the shop's bill book: Description, Qty, Rate, Amount (qty × rate).
+- Every cash sale belongs to a customer and goes on their khata (shown as `16 CS`), sharing bill numbers with job bills.
+- Take an advance in **cash or online** (with a detail such as JazzCash / bank / TID). The advance is recorded as a payment on the khata; Bal. = Total − Adv. stays as the customer's balance. "Paid in full" fills the whole total.
+- Job bills (Sales) can take an advance the same way.
+- Editing a bill keeps its advance's receipt number; clearing the advance or deleting the bill removes it. An advance cannot be deleted on its own.
+
+## Payment Received
+
+- Receive money from a party in **Cash** or **Online**, with a narration or online detail. Each receipt gets its own number (`3 CR`) and credits the khata.
+- Shows the party's current balance before saving.
+- Lists every receipt (advances included, marked with their bill) with cash and online totals, filtered by party, method and date.
+
+## Printed bill
+
+- Every bill (job or cash) prints like the bill book: logo and business name, address and contacts from Settings, Date / Sr. / Name, a Description / Qty / Rate / Amount table, Total / Adv. / Bal., and a signature line.
+- A job charged for several kinds of work prints its name, then one line per kind (Rota P, GTO P, ...).
+- In Settings, separate two contacts in the Phone field with `;`.
+
 ## Ledger (khata)
 
 - A customer's balance is their opening balance plus every bill minus every payment received.

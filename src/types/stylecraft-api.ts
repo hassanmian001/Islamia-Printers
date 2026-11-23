@@ -69,15 +69,46 @@ export type ContactsApi = {
 // Sales: one bill per customer visit, one or more printing jobs on it
 // ---------------------------------------------------------------------------
 
+/** "job": printing jobs with Rota/GTO/Cutting/Lamination/Dye. "cash": plain description / qty / rate lines. */
+export type SaleKind = "job" | "cash";
+
+/** How money came in: cash in hand, or an online transfer (bank, JazzCash, Easypaisa...). */
+export type PaymentMethod = "cash" | "online";
+
 export type SaleJobInput = {
   jobName: string;
 } & Record<WorkKind, WorkChargeInput>;
 
+export type CashSaleItemInput = {
+  description: string;
+  qty: number;
+  rateCents: number;
+};
+
 export type SaleInput = {
+  /** Defaults to "job". */
+  kind?: SaleKind;
   customerId: number;
   saleDate: Date | string;
   notes?: string | null;
-  jobs: SaleJobInput[];
+  /** The lines of a job bill. */
+  jobs?: SaleJobInput[];
+  /** The lines of a cash sale bill. */
+  items?: CashSaleItemInput[];
+  /** Money taken with the bill ("Adv." on the bill). It is recorded as a payment on the customer's khata. */
+  advanceCents?: number;
+  advanceMethod?: PaymentMethod;
+  /** Detail of an online advance, e.g. "JazzCash 0300... TID 1234". */
+  advanceReference?: string | null;
+};
+
+export type CashSaleItemDto = {
+  id: number;
+  position: number;
+  description: string;
+  qty: number;
+  rateCents: number;
+  amountCents: number;
 };
 
 export type SaleJobDto = {
@@ -90,6 +121,7 @@ export type SaleJobDto = {
 export type SaleDetailDto = {
   id: number;
   billNumber: number;
+  kind: SaleKind;
   customerId: number;
   customerName: string;
   customerPhone: string | null;
@@ -97,16 +129,25 @@ export type SaleDetailDto = {
   totalAmountCents: number;
   notes: string | null;
   jobs: SaleJobDto[];
+  items: CashSaleItemDto[];
+  advanceCents: number;
+  advanceMethod: PaymentMethod | null;
+  advanceReference: string | null;
+  /** Total minus the advance taken with the bill; later payments are not counted here. */
+  balanceCents: number;
   createdAt: Date;
   updatedAt: Date;
 };
 
-export type SaleHistoryDto = Omit<SaleDetailDto, "jobs"> & {
+export type SaleHistoryDto = Omit<SaleDetailDto, "jobs" | "items"> & {
+  /** Number of lines on the bill: jobs for a job bill, items for a cash sale. */
   jobCount: number;
+  /** Job names, or item descriptions for a cash sale. */
   jobNames: string[];
 };
 
 export type SaleListFilters = {
+  kind?: SaleKind | null;
   customerId?: number | null;
   search?: string | null;
   /** "YYYY-MM-DD", inclusive. */
@@ -132,7 +173,9 @@ export type PaymentInput = {
   customerId: number;
   amountCents: number;
   paymentDate: Date | string;
-  /** "cash", "mzn", "bank" or whatever the shop writes on the khata. */
+  /** Defaults to "cash". */
+  method?: PaymentMethod;
+  /** Detail written on the khata: "mzn", "JazzCash TID 1234", a bank name... */
   narration?: string | null;
 };
 
@@ -142,7 +185,25 @@ export type PaymentDto = {
   customerId: number;
   amountCents: number;
   paymentDate: Date;
+  method: PaymentMethod;
   narration: string | null;
+  /** Set when this is the advance taken with a bill. */
+  saleId: number | null;
+};
+
+export type PaymentListItemDto = PaymentDto & {
+  customerName: string;
+  /** The bill this advance was taken with, if any. */
+  billNumber: number | null;
+};
+
+export type PaymentListFilters = {
+  customerId?: number | null;
+  method?: PaymentMethod | null;
+  /** "YYYY-MM-DD", inclusive. */
+  startDate?: string | null;
+  /** "YYYY-MM-DD", inclusive. */
+  endDate?: string | null;
 };
 
 export type LedgerCustomerSummaryDto = {
@@ -174,13 +235,20 @@ export type LedgerJobRowDto = SaleJobDto & {
   balanceCents: number;
 };
 
+export type LedgerCashItemRowDto = CashSaleItemDto & {
+  /** Running balance after this line. */
+  balanceCents: number;
+};
+
 export type LedgerBillEntryDto = {
   kind: "bill";
+  saleKind: SaleKind;
   saleId: number;
   billNumber: number;
   date: Date;
   notes: string | null;
   jobs: LedgerJobRowDto[];
+  items: LedgerCashItemRowDto[];
   workTotals: WorkAmounts;
   totalAmountCents: number;
   /** Running balance after the whole bill. */
@@ -192,7 +260,10 @@ export type LedgerPaymentEntryDto = {
   paymentId: number;
   receiptNumber: number;
   date: Date;
+  method: PaymentMethod;
   narration: string | null;
+  /** The bill this advance was taken with, if any. */
+  billNumber: number | null;
   amountCents: number;
   balanceCents: number;
 };
@@ -232,6 +303,7 @@ export type LedgerApi = {
   getStatement(customerId: number, filters?: LedgerFilters): Promise<LedgerStatementDto>;
   nextReceiptNumber(): Promise<number>;
   recordPayment(input: PaymentInput): Promise<PaymentDto>;
+  listPayments(filters?: PaymentListFilters): Promise<PaymentListItemDto[]>;
   deletePayment(id: number, password: string, actorName?: string | null): Promise<void>;
 };
 
@@ -252,6 +324,8 @@ export type DashboardSummaryDto = {
   monthSalesCents: number;
   monthBillCount: number;
   monthReceivedCents: number;
+  monthReceivedCashCents: number;
+  monthReceivedOnlineCents: number;
   totalReceivableCents: number;
   customerCount: number;
   monthWorkTotals: WorkAmounts;
@@ -273,6 +347,10 @@ export type ReportFilters = {
 export type SalesReportRowDto = {
   saleId: number;
   billNumber: number;
+  saleKind: SaleKind;
+  /** Quantity and rate of a cash sale line; zero for job rows, whose figures are per kind of work. */
+  qty: number;
+  rateCents: number;
   saleDate: Date;
   customerName: string;
   jobName: string;
@@ -284,9 +362,13 @@ export type ReportsDto = {
   rows: SalesReportRowDto[];
   workTotals: WorkAmounts;
   salesTotalCents: number;
+  /** Part of salesTotalCents that came from cash sale bills. */
+  cashSalesCents: number;
   billCount: number;
   jobCount: number;
   receivedCents: number;
+  receivedCashCents: number;
+  receivedOnlineCents: number;
 };
 
 export type ReportsApi = {

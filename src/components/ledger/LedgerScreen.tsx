@@ -3,12 +3,13 @@ import { useCallback, useEffect, useState } from "react";
 import BillPreview from "@/components/invoices/BillPreview";
 import DocumentPanel from "@/components/invoices/DocumentPanel";
 import LedgerTable from "@/components/ledger/LedgerTable";
+import PaymentMethodToggle from "@/components/payments/PaymentMethodToggle";
 import { Button } from "@/components/ui/button";
 import { ErrorBanner, inputClass, labelClass, ScreenHeader, SuccessBanner } from "@/components/ui/form";
 import { formatCurrency } from "@/lib/currency";
 import { firstDayOfMonthInputValue, formatDate, parseRupeesToCents, toDayInputValue } from "@/lib/format";
 import { buildLedgerHtml, ledgerDocumentFileName } from "@/lib/invoice-document";
-import type { BillDocumentDto, LedgerStatementDto, LedgerSummaryDto } from "@/types/stylecraft-api";
+import type { BillDocumentDto, LedgerStatementDto, LedgerSummaryDto, PaymentMethod } from "@/types/stylecraft-api";
 
 export default function LedgerScreen() {
   const [summary, setSummary] = useState<LedgerSummaryDto | null>(null);
@@ -22,7 +23,8 @@ export default function LedgerScreen() {
 
   const [paymentDate, setPaymentDate] = useState(() => toDayInputValue());
   const [paymentAmount, setPaymentAmount] = useState("");
-  const [paymentNarration, setPaymentNarration] = useState("cash");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  const [paymentNarration, setPaymentNarration] = useState("");
   const [nextReceiptNumber, setNextReceiptNumber] = useState<number | null>(null);
 
   const [isPasswordSet, setIsPasswordSet] = useState(false);
@@ -110,11 +112,13 @@ export default function LedgerScreen() {
         customerId: selectedCustomerId,
         amountCents,
         paymentDate,
-        narration: paymentNarration,
+        method: paymentMethod,
+        narration: paymentNarration || null,
       });
 
-      setMessage(`Receipt ${payment.receiptNumber} CR saved — ${formatCurrency(payment.amountCents)} received.`);
+      setMessage(`Receipt ${payment.receiptNumber} CR saved — ${formatCurrency(payment.amountCents)} received (${paymentMethod}).`);
       setPaymentAmount("");
+      setPaymentNarration("");
       await refreshAfterChange();
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not record the payment.");
@@ -325,22 +329,16 @@ export default function LedgerScreen() {
                 Amount
                 <input className={inputClass} id="payment-amount" inputMode="decimal" onChange={(event) => setPaymentAmount(event.target.value)} placeholder="0" value={paymentAmount} />
               </label>
-              <label className={`${labelClass} md:col-span-2`} htmlFor="payment-narration">
-                Narration
+              <PaymentMethodToggle name="ledger-payment-method" onChange={setPaymentMethod} value={paymentMethod} />
+              <label className={labelClass} htmlFor="payment-narration">
+                {paymentMethod === "online" ? "Online detail" : "Narration"}
                 <input
                   className={inputClass}
                   id="payment-narration"
-                  list="payment-narrations"
                   onChange={(event) => setPaymentNarration(event.target.value)}
-                  placeholder="cash, mzn, bank..."
+                  placeholder={paymentMethod === "online" ? "JazzCash / Easypaisa / bank, TID" : "Optional, e.g. by hand, mzn"}
                   value={paymentNarration}
                 />
-                <datalist id="payment-narrations">
-                  <option value="cash" />
-                  <option value="mzn" />
-                  <option value="bank" />
-                  <option value="cheque" />
-                </datalist>
               </label>
             </div>
             <div>

@@ -38,6 +38,7 @@ const stylecraftApi: StyleCraftApi = {
     getStatement: (customerId, filters) => ipcRenderer.invoke(ledgerChannels.getStatement, customerId, filters),
     nextReceiptNumber: () => ipcRenderer.invoke(ledgerChannels.nextReceiptNumber),
     recordPayment: (input) => ipcRenderer.invoke(ledgerChannels.recordPayment, input),
+    listPayments: (filters) => ipcRenderer.invoke(ledgerChannels.listPayments, filters),
     deletePayment: (id, password, actorName) => ipcRenderer.invoke(ledgerChannels.deletePayment, id, password, actorName),
   },
   reports: {

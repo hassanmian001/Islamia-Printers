@@ -10,7 +10,7 @@ function metricCards(summary: DashboardSummaryDto) {
   return [
     { label: "Today's sales", value: formatCurrency(summary.todaySalesCents), detail: `${summary.todayBillCount} bills today`, icon: BarChart3 },
     { label: "This month's sales", value: formatCurrency(summary.monthSalesCents), detail: `${summary.monthBillCount} bills this month`, icon: CalendarDays },
-    { label: "Received this month", value: formatCurrency(summary.monthReceivedCents), detail: "Payments taken this month", icon: HandCoins },
+    { label: "Received this month", value: formatCurrency(summary.monthReceivedCents), detail: `Cash ${formatCurrency(summary.monthReceivedCashCents)} · Online ${formatCurrency(summary.monthReceivedOnlineCents)}`, icon: HandCoins },
     { label: "Total receivable", value: formatCurrency(summary.totalReceivableCents), detail: "Still to collect (wusooli baqi)", icon: Wallet },
     { label: "Customers", value: String(summary.customerCount), detail: "Accounts on the khata", icon: Users },
   ];
