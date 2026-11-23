@@ -131,7 +131,9 @@ export function saleDetail(overrides: Partial<SaleDetailDto> = {}): SaleDetailDt
 }
 
 export function billDocument(overrides: Partial<BillDocumentDto> = {}): BillDocumentDto {
-  return { ...saleDetail(), customerAddress: "Jhang Bazar", business, ...overrides };
+  const sale = { ...saleDetail(), ...overrides };
+
+  return { customerAddress: "Jhang Bazar", business, previousBalanceCents: 0, closingBalanceCents: sale.totalAmountCents - sale.advanceCents, ...sale };
 }
 
 export function ledgerStatement(overrides: Partial<LedgerStatementDto> = {}): LedgerStatementDto {

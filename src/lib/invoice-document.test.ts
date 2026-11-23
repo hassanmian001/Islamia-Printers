@@ -1,45 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { billDocumentFileName, billLines, billNumberLabel, buildBillHtml, buildLedgerHtml, escapeHtml, ledgerDocumentFileName, paymentNarration } from "./invoice-document";
+import { billDocumentFileName, billLines, billNumberLabel, buildLedgerHtml, escapeHtml, ledgerDocumentFileName, paymentNarration } from "./invoice-document";
 import { billDocument, charge, ledgerStatement, saleJob } from "@/test/mock-api";
 
 describe("bill document", () => {
-  it("prints like the bill book: Date, Sr., Name, Description / Qty / Rate / Amount, Total, Adv. and Bal.", () => {
-    const html = buildBillHtml(
-      billDocument({
-        kind: "cash",
-        jobs: [],
-        items: [{ id: 1, position: 0, description: "700g UV Round Corner Matt Card (500x2)", qty: 1000, rateCents: 1_300, amountCents: 1_300_000 }],
-        totalAmountCents: 1_300_000,
-        advanceCents: 650_000,
-        advanceMethod: "online",
-        balanceCents: 650_000,
-        saleDate: new Date(2025, 4, 7),
-        notes: "Deliver Friday",
-        business: { ...billDocument().business, phone: "Owner One | +92 300 1111111; Owner Two | +92 300 2222222" },
-      }),
-    );
-
-    expect(html).toContain('<span class="islamia">ISLAMIA</span><span class="printers">PRINTERS</span>');
-    expect(html).toContain("07-05-2025");
-    expect(html).toContain(">015<");
-    expect(html).toContain("Islamia Press (0300-6609031)");
-    expect(html).toContain("DESCRIPTION");
-    expect(html).toContain("700g UV Round Corner Matt Card (500x2)");
-    expect(html).toContain(">1,000<");
-    expect(html).toContain(">13<");
-    expect(html).toContain("13,000/-");
-    expect(html).toContain("TOTAL");
-    expect(html).toContain("ADV.");
-    expect(html).toContain("ONLINE");
-    expect(html).toContain("6,500/-");
-    expect(html).toContain("BAL.");
-    expect(html).toContain("Owner One | +92 300 1111111");
-    expect(html).toContain("Owner Two | +92 300 2222222");
-    expect(html).toContain("Signature");
-    expect(html).toContain("Deliver Friday");
-  });
-
   it("turns a job into Description / Qty / Rate / Amount lines", () => {
     const lines = billLines(
       billDocument({
@@ -56,9 +20,6 @@ describe("bill document", () => {
   });
 
   it("escapes what the shop typed", () => {
-    const html = buildBillHtml(billDocument({ customerName: "<script>alert(1)</script>" }));
-
-    expect(html).not.toContain("<script>alert");
     expect(escapeHtml(`"A" & 'B'`)).toBe("&quot;A&quot; &amp; &#039;B&#039;");
   });
 

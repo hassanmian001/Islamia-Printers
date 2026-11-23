@@ -188,6 +188,24 @@ describe("cash sales", () => {
   });
 });
 
+describe("bill balances", () => {
+  it("prints P. Bal as the khata balance just before the bill, and BAL. after it", () => {
+    const databasePath = makeTempDatabasePath();
+    const customer = createCustomer(databasePath, { name: "Ali", openingBalanceCents: rupees(4_500) });
+
+    createSale(databasePath, cashSale(customer.id, { saleDate: "2026-11-01", advanceCents: 0 }));
+    recordPayment(databasePath, { customerId: customer.id, amountCents: rupees(10_000), paymentDate: "2026-11-10" });
+    const sale = createSale(databasePath, cashSale(customer.id, { saleDate: "2026-11-23" }));
+    createSale(databasePath, cashSale(customer.id, { saleDate: "2026-11-30", advanceCents: 0 }));
+
+    const bill = getBill(databasePath, sale.id);
+
+    // 4,500 opening + 16,000 earlier bill - 10,000 paid = 10,500 before this bill; the later bill does not count.
+    expect(bill.previousBalanceCents).toBe(rupees(10_500));
+    expect(bill.closingBalanceCents).toBe(rupees(10_500 + 16_000 - 8_000));
+  });
+});
+
 describe("payments received", () => {
   it("records cash and online payments and lists them with filters", () => {
     const databasePath = makeTempDatabasePath();

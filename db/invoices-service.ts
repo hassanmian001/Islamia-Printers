@@ -2,9 +2,10 @@ import { eq } from "drizzle-orm";
 import fs from "node:fs";
 import path from "node:path";
 
-import type { BillDocumentDto, InvoiceFolderDto } from "../src/types/stylecraft-api.js";
+import type { BillDocumentDto, InvoiceFolderDto, LedgerBillEntryDto } from "../src/types/stylecraft-api.js";
 import { createDb } from "./client.js";
 import { runMigrations } from "./migrate.js";
+import { getLedgerStatement } from "./ledger-service.js";
 import { getSale } from "./sales-service.js";
 import { customers, settings } from "./schema.js";
 import { getBusinessSettings } from "./settings-service.js";
@@ -31,9 +32,17 @@ export function getBill(databasePath: string | undefined, saleId: number): BillD
   try {
     const customer = db.select({ address: customers.address }).from(customers).where(eq(customers.id, sale.customerId)).get();
 
+    // The khata already orders every entry; the balance just before this bill's lines is its P. Bal.
+    const entry = getLedgerStatement(databasePath, sale.customerId).entries.find(
+      (row): row is LedgerBillEntryDto => row.kind === "bill" && row.saleId === sale.id,
+    );
+    const previousBalanceCents = entry === undefined ? 0 : entry.balanceCents - entry.totalAmountCents;
+
     return {
       ...sale,
       customerAddress: customer?.address ?? null,
+      previousBalanceCents,
+      closingBalanceCents: previousBalanceCents + sale.totalAmountCents - sale.advanceCents,
       business: { businessName, phone, email, address, currencySymbol },
     };
   } finally {

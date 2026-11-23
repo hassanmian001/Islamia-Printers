@@ -1,5 +1,4 @@
 import { brandLogoDataUri } from "@/lib/branding";
-import { formatCurrency } from "@/lib/currency";
 import { formatAmount, formatAmountOrBlank, formatDate, formatQty, formatRate } from "@/lib/format";
 import { workKinds, workLabels } from "@/lib/job-math";
 import type { BillDocumentDto, BusinessDocumentSettingsDto, LedgerStatementDto, PaymentMethod, SaleKind, WorkAmounts, WorkCharge } from "@/types/stylecraft-api";
@@ -36,46 +35,6 @@ const ledgerStyles = `
   .final{margin-top:14px;display:flex;justify-content:flex-end;gap:40px;font-size:14px;font-weight:700}
   .signatures{margin-top:56px;display:flex;justify-content:space-between}
   .signatures div{border-top:1px solid #0f172a;padding-top:4px;width:160px;text-align:center;font-weight:700}
-`;
-
-const maroon = "#991F36";
-
-const billStyles = `
-  @page{size:A4 portrait;margin:10mm}
-  body{margin:0;font-family:"Segoe UI",Arial,Helvetica,sans-serif;color:#1f2937}
-  .sheet{position:relative;padding:18px 22px 10px}
-  .topbar{position:absolute;top:10px;right:22px;width:38%;height:7px;background:#c7c8ca}
-  .brand{display:flex;align-items:flex-end;gap:10px;margin-top:6px}
-  .brand img{width:66px;height:66px;object-fit:contain}
-  .brand .islamia{font-size:50px;line-height:1;font-weight:800;letter-spacing:5px;color:${maroon}}
-  .brand .printers{font-size:38px;line-height:1;font-weight:500;letter-spacing:5px;color:#58595b;margin-left:6px}
-  .rule{height:2px;background:${maroon};margin:8px 0 6px}
-  .contact{text-align:center;font-size:12px;color:#374151;line-height:1.6}
-  .contact .dot{color:${maroon};font-weight:700;margin:0 4px}
-  .rule2{height:1px;background:${maroon};margin:6px 0 16px}
-  .meta{display:flex;justify-content:space-between;align-items:flex-end;margin:10px 0;font-size:17px}
-  .meta .label{color:${maroon};font-weight:600}
-  .meta .fill{display:inline-block;border-bottom:1.5px solid ${maroon};min-width:150px;padding:0 10px 2px;font-weight:600;color:#111827;text-align:center}
-  .meta .fill.wide{min-width:0;flex:1;text-align:left}
-  .meta .name{display:flex;flex:1;gap:6px;align-items:flex-end}
-  table.bill{width:100%;border-collapse:collapse;margin-top:8px;table-layout:fixed;position:relative}
-  table.bill th{background:${maroon};color:#fff;font-weight:600;letter-spacing:1px;padding:9px 6px;font-size:14px;border:1px solid ${maroon};text-align:center}
-  table.bill td{border:none;border-left:1px solid ${maroon};border-right:1px solid ${maroon};padding:5px 10px;font-size:14px;vertical-align:top}
-  table.bill td .m{font-size:10px;font-weight:500;color:#6b7280;letter-spacing:.5px}
-  table.bill td.c{text-align:center}
-  table.bill tr.head td{font-weight:700;padding-top:9px}
-  table.bill tr.sub td.d{padding-left:26px;color:#374151}
-  table.bill tr.filler td{border-bottom:1px solid ${maroon}}
-  table.bill tr.tot td{border:1px solid ${maroon};padding:7px 10px;font-size:15px}
-  table.bill tr.tot td.blank{border:none;border-left:1px solid ${maroon};border-right:1px solid ${maroon}}
-  table.bill tr.tot:last-child td.blank{border-bottom:1px solid ${maroon}}
-  table.bill tr.tot td.lbl{background:${maroon};color:#fff;font-weight:600;text-align:center;letter-spacing:1px}
-  table.bill tr.tot td.val{text-align:center;font-weight:600}
-  .watermark{position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);width:260px;opacity:.05;pointer-events:none}
-  .notes{margin-top:10px;font-size:13px;color:#374151}
-  .sign{display:flex;justify-content:flex-end;margin-top:46px}
-  .sign div{width:200px;border-top:1.5px solid ${maroon};text-align:center;color:${maroon};font-size:16px;padding-top:4px}
-  .bottombar{height:5px;background:#c7c8ca;margin-top:18px}
 `;
 
 export function escapeHtml(value: string | number | null | undefined) {
@@ -183,68 +142,12 @@ export function billMoney(cents: number) {
   return `${formatAmount(cents)}/-`;
 }
 
-function billDate(value: Date) {
-  const date = new Date(value);
-  return `${String(date.getDate()).padStart(2, "0")}-${String(date.getMonth() + 1).padStart(2, "0")}-${date.getFullYear()}`;
-}
-
 /** The shop's contacts, one per piece: "Name | number; Name | number" in Settings becomes two. */
 function contactPieces(value: string | null) {
   return (value ?? "")
     .split(";")
     .map((piece) => piece.trim())
     .filter((piece) => piece !== "");
-}
-
-/**
- * A single bill laid out like the shop's printed bill book: logo and name,
- * address and contacts, Date / Sr. / Name, a Description / Qty / Rate / Amount
- * table running down the page, Total / Adv. / Bal., and a signature line.
- */
-export function buildBillHtml(bill: BillDocumentDto) {
-  const lines = billLines(bill);
-  const rows = lines
-    .map((line) => {
-      const qty = line.qty === null ? "" : escapeHtml(formatQty(line.qty));
-      const rate = line.rateCents === null ? "" : escapeHtml(formatRate(line.rateCents));
-      const amount = line.amountCents === null ? "" : escapeHtml(billMoney(line.amountCents));
-      const css = line.kind === "head" ? "head" : line.kind === "sub" ? "sub" : "";
-
-      return `<tr class="${css}"><td class="d">${escapeHtml(line.description)}</td><td class="c">${qty}</td><td class="c">${rate}</td><td class="c">${amount}</td></tr>`;
-    })
-    .join("");
-  const fillerHeight = Math.max(60, 470 - lines.length * 30);
-  const name = [bill.customerName, bill.customerPhone ? `(${bill.customerPhone})` : null].filter(Boolean).join(" ");
-  const contacts = contactPieces(bill.business.phone);
-  const addressLine = [bill.business.address, bill.business.email].filter((part): part is string => !!part);
-  // "Islamia Printers": the first word in maroon, the rest in grey, as on the printed bill book.
-  const [firstWord = "", ...otherWords] = bill.business.businessName.trim().toUpperCase().split(/\s+/);
-
-  const body = `<div class="sheet">
-    <div class="topbar"></div>
-    <div class="brand"><img src="${brandLogoDataUri}" alt="logo"><span class="islamia">${escapeHtml(firstWord)}</span><span class="printers">${escapeHtml(otherWords.join(" "))}</span></div>
-    <div class="rule"></div>
-    ${addressLine.length > 0 ? `<div class="contact">${addressLine.map(escapeHtml).join('<span class="dot">•</span>')}</div>` : ""}
-    ${contacts.length > 0 ? `<div class="contact">${contacts.map(escapeHtml).join('<span class="dot">|</span>')}</div>` : ""}
-    <div class="rule2"></div>
-    <div class="meta"><span><span class="label">Date:</span> <span class="fill">${escapeHtml(billDate(bill.saleDate))}</span></span><span><span class="label">Sr.</span> <span class="fill">${escapeHtml(String(bill.billNumber).padStart(3, "0"))}</span></span></div>
-    <div class="meta"><span class="name"><span class="label">Name:</span> <span class="fill wide">${escapeHtml(name)}</span></span></div>
-    <table class="bill">
-      <colgroup><col style="width:56%"><col style="width:12%"><col style="width:12%"><col style="width:20%"></colgroup>
-      <thead><tr><th>DESCRIPTION</th><th>QTY.</th><th>RATE</th><th>AMOUNT</th></tr></thead>
-      <tbody>${rows}<tr class="filler"><td style="height:${fillerHeight}px"></td><td></td><td></td><td></td></tr>
-        <tr class="tot"><td class="blank" colspan="2"></td><td class="lbl">TOTAL</td><td class="val">${escapeHtml(billMoney(bill.totalAmountCents))}</td></tr>
-        <tr class="tot"><td class="blank" colspan="2"></td><td class="lbl">ADV.</td><td class="val">${escapeHtml(billMoney(bill.advanceCents))}${bill.advanceCents > 0 && bill.advanceMethod ? `<div class="m">${escapeHtml(paymentMethodLabel(bill.advanceMethod).toUpperCase())}</div>` : ""}</td></tr>
-        <tr class="tot"><td class="blank" colspan="2"></td><td class="lbl">BAL.</td><td class="val">${escapeHtml(billMoney(bill.balanceCents))}</td></tr>
-      </tbody>
-    </table>
-    <img class="watermark" src="${brandLogoDataUri}" alt="">
-    ${bill.notes ? `<div class="notes"><strong>Notes:</strong> ${escapeHtml(bill.notes)}</div>` : ""}
-    <div class="sign"><div>Signature</div></div>
-    <div class="bottombar"></div>
-  </div>`;
-
-  return page(`Bill ${bill.billNumber}`, billStyles, body);
 }
 
 function dayBefore(day: string) {

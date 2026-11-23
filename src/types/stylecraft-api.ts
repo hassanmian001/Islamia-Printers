@@ -381,6 +381,10 @@ export type ReportsApi = {
 
 export type BillDocumentDto = SaleDetailDto & {
   customerAddress: string | null;
+  /** "P. Bal" on the bill: what the customer owed just before this bill, in khata order. */
+  previousBalanceCents: number;
+  /** "BAL." on the bill: P. Bal + this bill's total - the advance taken with it. */
+  closingBalanceCents: number;
   business: BusinessDocumentSettingsDto;
 };
 
@@ -395,6 +399,8 @@ export type SavePdfInput = {
   saveAs?: boolean;
   /** Wide documents such as the khata print sideways. */
   landscape?: boolean;
+  /** A5 for bill-book bills, printed edge to edge; A4 (the default) otherwise. */
+  pageSize?: "A4" | "A5";
 };
 
 /** `filePath` is null when the save dialog was closed without picking a file. */

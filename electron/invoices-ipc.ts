@@ -11,6 +11,7 @@ export type SavePdfInput = {
   fileName: string;
   saveAs?: boolean;
   landscape?: boolean;
+  pageSize?: "A4" | "A5";
 };
 
 export type SavePdfResultDto = {
@@ -64,13 +65,13 @@ export function registerInvoiceHandlers(ipcMain: IpcMain) {
         return { filePath: null, folder };
       }
 
-      fs.writeFileSync(result.filePath, await renderHtmlToPdf(input.html, { landscape: input.landscape === true }));
+      fs.writeFileSync(result.filePath, await renderHtmlToPdf(input.html, { landscape: input.landscape === true, pageSize: input.pageSize }));
 
       return { filePath: result.filePath, folder };
     }
 
     const filePath = uniqueFilePath(folder, fileName);
-    fs.writeFileSync(filePath, await renderHtmlToPdf(input.html, { landscape: input.landscape === true }));
+    fs.writeFileSync(filePath, await renderHtmlToPdf(input.html, { landscape: input.landscape === true, pageSize: input.pageSize }));
 
     return { filePath, folder };
   });

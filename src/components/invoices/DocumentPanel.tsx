@@ -14,11 +14,14 @@ type DocumentPanelProps = {
   fileName: string;
   /** Wide documents such as the khata are saved sideways. */
   landscape?: boolean;
+  pageSize?: "A4" | "A5";
+  /** Extra controls shown beside the buttons, such as a print mode switch. */
+  toolbar?: ReactNode;
   onClose: () => void;
   children: ReactNode;
 };
 
-export default function DocumentPanel({ kicker, title, subtitle, html, fileName, landscape = false, onClose, children }: DocumentPanelProps) {
+export default function DocumentPanel({ kicker, title, subtitle, html, fileName, landscape = false, pageSize = "A4", toolbar, onClose, children }: DocumentPanelProps) {
   const [savedFilePath, setSavedFilePath] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +32,7 @@ export default function DocumentPanel({ kicker, title, subtitle, html, fileName,
     setIsSaving(true);
 
     try {
-      const result = await window.stylecraft.invoices.savePdf({ html, fileName, saveAs, landscape });
+      const result = await window.stylecraft.invoices.savePdf({ html, fileName, saveAs, landscape, pageSize });
       setSavedFilePath(result.filePath);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not save the PDF.");
@@ -71,6 +74,8 @@ export default function DocumentPanel({ kicker, title, subtitle, html, fileName,
           </Button>
         </div>
       </div>
+
+      {toolbar ? <div className="mt-4">{toolbar}</div> : null}
 
       {error ? (
         <div className="mt-4 rounded-2xl border border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-950/30 px-4 py-3 text-sm font-medium text-red-700 dark:text-red-300" role="alert">

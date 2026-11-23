@@ -10,7 +10,7 @@ import path from "node:path";
  * invoice with a logo and many lines outgrows what a URL can carry. Scripts are
  * off: the pages we print are static markup.
  */
-export async function renderHtmlToPdf(html: string, options: { landscape?: boolean } = {}): Promise<Buffer> {
+export async function renderHtmlToPdf(html: string, options: { landscape?: boolean; pageSize?: "A4" | "A5" } = {}): Promise<Buffer> {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "islamia-printers-pdf-"));
   const htmlPath = path.join(directory, "document.html");
   fs.writeFileSync(htmlPath, html, "utf8");
@@ -30,9 +30,10 @@ export async function renderHtmlToPdf(html: string, options: { landscape?: boole
 
     return await window.webContents.printToPDF({
       printBackground: true,
-      pageSize: "A4",
+      pageSize: options.pageSize === "A5" ? "A5" : "A4",
       landscape: options.landscape === true,
-      margins: { marginType: "custom", top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 },
+      // A bill-book page is laid out edge to edge in millimetres, so it gets no margin of its own.
+      margins: options.pageSize === "A5" ? { marginType: "none" } : { marginType: "custom", top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 },
     });
   } finally {
     window.destroy();
