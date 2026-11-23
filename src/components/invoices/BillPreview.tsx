@@ -23,7 +23,7 @@ export default function BillPreview({ bill, onClose }: BillPreviewProps) {
     >
       <div className="overflow-x-auto rounded-2xl border border-rose-900/40">
         <table className="min-w-full text-left text-sm">
-          <thead className="bg-[#991F36] text-xs uppercase tracking-wide text-white">
+          <thead className="bg-brand-600 text-xs uppercase tracking-wide text-white">
             <tr>
               <th className="px-3 py-2 font-semibold">Description</th>
               <th className="px-3 py-2 text-center font-semibold">Qty.</th>

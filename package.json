@@ -30,6 +30,7 @@
     "test:renderer": "vitest run vite.config.test.ts src/app-content.test.ts src/lib/job-math.test.ts src/lib/invoice-document.test.ts src/components/contacts/ContactsScreen.test.tsx src/components/sales/SalesScreen.test.tsx src/components/sales/CashSaleScreen.test.tsx src/components/payments/PaymentsScreen.test.tsx src/components/dashboard/DashboardScreen.test.tsx src/components/ledger/LedgerScreen.test.tsx src/components/reports/ReportsScreen.test.tsx src/components/settings/SettingsScreen.test.tsx"
   },
   "dependencies": {
+    "@fontsource/montserrat": "^5.3.0",
     "better-sqlite3": "^12.11.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

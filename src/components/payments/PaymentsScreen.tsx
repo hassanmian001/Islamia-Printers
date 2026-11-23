@@ -167,7 +167,7 @@ export default function PaymentsScreen() {
             <CustomerPicker customers={customers} id="receive-customer" label="Party" onChange={setCustomerId} onCustomerCreated={() => void loadParties()} value={customerId} />
             {selectedBalance !== null ? (
               <p className="text-sm text-slate-600 dark:text-slate-300" data-testid="party-balance">
-                Balance on khata: <span className={`font-semibold ${selectedBalance > 0 ? "text-red-600 dark:text-red-400" : ""}`}>{formatCurrency(selectedBalance)}</span>
+                Balance on khata: <span className={`font-semibold ${selectedBalance > 0 ? "text-brand-700 dark:text-brand-300" : ""}`}>{formatCurrency(selectedBalance)}</span>
               </p>
             ) : null}
           </div>

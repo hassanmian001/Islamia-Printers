@@ -32,7 +32,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 640,
     title: "Islamia Printers",
-    backgroundColor: "#f8fafc",
+    backgroundColor: "#f4f0f1",
     // The packaged exe already carries build/icon.ico; this covers dev runs and the window itself.
     icon: path.join(__dirname, "../../dist/favicon.ico"),
     webPreferences: {

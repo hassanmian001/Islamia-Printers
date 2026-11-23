@@ -23,7 +23,7 @@ export default function PaymentMethodToggle({ name, value, onChange, label = "Re
           <label
             className={`flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium ${
               value === option.value
-                ? "border-blue-600 bg-blue-600 text-white dark:border-blue-500 dark:bg-blue-500"
+                ? "border-brand-600 bg-brand-600 text-white dark:border-brand-500 dark:bg-brand-500"
                 : "border-slate-300 bg-white text-slate-700 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200"
             }`}
             key={option.value}

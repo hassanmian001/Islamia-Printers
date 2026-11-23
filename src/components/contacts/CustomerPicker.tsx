@@ -48,12 +48,12 @@ export default function CustomerPicker({ id, customers, value, onChange, onCusto
   }
 
   return (
-    <div className="grid gap-2">
-      <label className={labelClass} htmlFor={id}>
+    <div className="grid min-w-0 gap-2">
+      <label className={`${labelClass} min-w-0`} htmlFor={id}>
         {label}
-        <div className="flex gap-2">
+        <div className="flex min-w-0 gap-2">
           <select
-            className={`${inputClass} min-w-0 flex-1`}
+            className={`${inputClass} w-full min-w-0 flex-1 truncate`}
             id={id}
             onChange={(event) => onChange(event.target.value ? Number(event.target.value) : null)}
             value={value ?? ""}

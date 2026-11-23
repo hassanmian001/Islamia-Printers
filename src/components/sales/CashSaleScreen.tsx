@@ -6,7 +6,7 @@ import BillPreview from "@/components/invoices/BillPreview";
 import AdvanceFields, { advanceFromSale, emptyAdvance, readAdvance, type AdvanceForm } from "@/components/sales/AdvanceFields";
 import BillHistory from "@/components/sales/BillHistory";
 import { Button } from "@/components/ui/button";
-import { compactInputClass, ErrorBanner, inputClass, labelClass, ScreenHeader, SuccessBanner } from "@/components/ui/form";
+import { compactInputClass, compactTextInputClass, ErrorBanner, inputClass, labelClass, ScreenHeader, SuccessBanner } from "@/components/ui/form";
 import { formatCurrency } from "@/lib/currency";
 import { formatAmount, parseQuantity, parseRupeesToCents, toDayInputValue } from "@/lib/format";
 import { workAmountCents } from "@/lib/job-math";
@@ -217,7 +217,7 @@ export default function CashSaleScreen() {
 
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
           <table className="min-w-full text-sm">
-            <thead className="bg-[#991F36] text-xs uppercase tracking-wide text-white">
+            <thead className="bg-brand-600 text-xs uppercase tracking-wide text-white">
               <tr>
                 <th className="w-8 px-2 py-2 text-left font-semibold">#</th>
                 <th className="px-2 py-2 text-left font-semibold">Description</th>
@@ -234,7 +234,7 @@ export default function CashSaleScreen() {
                   <td className="px-2 py-2">
                     <input
                       aria-label={`Line ${index + 1} description`}
-                      className={`${compactInputClass} text-left`}
+                      className={compactTextInputClass}
                       onChange={(event) => updateLine(line.key, "description", event.target.value)}
                       placeholder="e.g. 700g UV Round Corner Matt Card (500x2)"
                       value={line.description}

@@ -1,17 +1,16 @@
 import { BarChart3, Banknote, FileText, HandCoins, LayoutDashboard, Moon, NotebookText, Settings, ShoppingCart, Sun, Users } from "lucide-react";
-import { useState } from "react";
+import { useState, type ComponentType } from "react";
 
-import { moduleCards, sections, type IconName, type SectionId } from "@/app-content";
+import { sections, type IconName, type SectionId } from "@/app-content";
 import ContactsScreen from "@/components/contacts/ContactsScreen";
 import DashboardScreen from "@/components/dashboard/DashboardScreen";
 import LedgerScreen from "@/components/ledger/LedgerScreen";
 import PaymentsScreen from "@/components/payments/PaymentsScreen";
-import CashSaleScreen from "@/components/sales/CashSaleScreen";
 import ReportsScreen from "@/components/reports/ReportsScreen";
+import CashSaleScreen from "@/components/sales/CashSaleScreen";
 import SalesScreen from "@/components/sales/SalesScreen";
 import SettingsScreen from "@/components/settings/SettingsScreen";
-import { Button } from "@/components/ui/button";
-import { brandLogoDataUri } from "@/lib/branding";
+import { brandLogoWhiteDataUri } from "@/lib/branding";
 import { useTheme } from "@/lib/use-theme";
 import { cn } from "@/lib/utils";
 
@@ -27,111 +26,112 @@ const icons = {
   settings: Settings,
 } satisfies Record<IconName, typeof LayoutDashboard>;
 
+const screens: Record<SectionId, ComponentType> = {
+  dashboard: DashboardScreen,
+  sales: SalesScreen,
+  cash: CashSaleScreen,
+  payments: PaymentsScreen,
+  ledger: LedgerScreen,
+  contacts: ContactsScreen,
+  reports: ReportsScreen,
+  settings: SettingsScreen,
+};
+
+const todayLabel = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+
 export default function App() {
   const [activeSectionId, setActiveSectionId] = useState<SectionId>("dashboard");
   const { resolvedTheme, toggle: toggleTheme } = useTheme();
   const activeSection = sections.find((section) => section.id === activeSectionId) ?? sections[0];
   const ActiveIcon = icons[activeSection.icon];
-  const activeCards = moduleCards[activeSection.id];
+  const Screen = screens[activeSection.id];
 
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 text-slate-950 dark:text-slate-50">
+    <div className="min-h-screen bg-slate-100 text-slate-950 dark:bg-slate-950 dark:text-slate-50">
       <div className="flex min-h-screen flex-col md:flex-row">
-        <aside className="border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 md:w-60 md:shrink-0 md:border-b-0 md:border-r">
-          <div className="mb-6">
+        <aside className="relative overflow-hidden bg-gradient-to-b from-brand-700 via-brand-800 to-brand-950 text-white md:sticky md:top-0 md:flex md:h-screen md:w-64 md:shrink-0 md:flex-col dark:from-brand-900 dark:via-brand-950 dark:to-black">
+          {/* Soft light in the corner and a faint oversized mark, for depth without noise. */}
+          <div className="pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full bg-white/10 blur-3xl" aria-hidden="true" />
+          <img alt="" aria-hidden="true" className="pointer-events-none absolute -bottom-10 -right-12 w-56 opacity-[0.06]" src={brandLogoWhiteDataUri} />
+
+          <div className="relative px-5 pb-5 pt-6">
             <div className="flex items-center gap-3">
-              <img alt="Islamia Printers logo" className="h-12 w-12 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1" src={brandLogoDataUri} />
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-600 dark:text-blue-400">Islamia Printers</div>
-                <h1 className="mt-1 text-2xl font-bold tracking-tight">Sales & Khata</h1>
+              <img alt="Islamia Printers logo" className="h-12 w-12 drop-shadow" src={brandLogoWhiteDataUri} />
+              <div className="leading-none">
+                <div className="text-xl font-extrabold tracking-[0.14em]">ISLAMIA</div>
+                <div className="mt-1 text-[11px] font-medium tracking-[0.42em] text-white/70">PRINTERS</div>
               </div>
             </div>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Job bills and customer ledgers for the press.</p>
+            <div className="mt-5 h-px bg-gradient-to-r from-white/40 via-white/15 to-transparent" />
+            <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/60">Sales &amp; Khata</p>
           </div>
 
-          <nav className="grid gap-2" aria-label="Main navigation">
+          <nav aria-label="Main navigation" className="relative grid gap-1 px-3 md:flex-1 md:content-start md:overflow-y-auto">
             {sections.map((section) => {
               const Icon = icons[section.icon];
               const isActive = activeSectionId === section.id;
 
               return (
-                <Button
-                  className={cn("justify-start gap-3", isActive && "bg-blue-600 text-white hover:bg-blue-700")}
+                <button
+                  aria-current={isActive ? "page" : undefined}
+                  className={cn(
+                    "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-all",
+                    isActive ? "bg-white text-brand-700 shadow-lg shadow-black/20" : "text-white/80 hover:bg-white/10 hover:text-white",
+                  )}
                   key={section.id}
                   onClick={() => setActiveSectionId(section.id)}
-                  size="sm"
                   type="button"
-                  variant={isActive ? "default" : "ghost"}
                 >
-                  <Icon className="h-4 w-4" aria-hidden="true" />
+                  <span
+                    className={cn(
+                      "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
+                      isActive ? "bg-brand-50 text-brand-600" : "bg-white/10 text-white group-hover:bg-white/15",
+                    )}
+                  >
+                    <Icon className="h-4 w-4" aria-hidden="true" />
+                  </span>
                   {section.label}
-                </Button>
+                </button>
               );
             })}
           </nav>
 
-          <div className="mt-6 border-t border-slate-200 dark:border-slate-700 pt-4">
-            <Button
+          <div className="relative border-t border-white/10 px-3 py-4">
+            <button
               aria-label={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-              className="w-full justify-start gap-3"
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-white/80 transition-colors hover:bg-white/10 hover:text-white"
               onClick={toggleTheme}
-              size="sm"
               type="button"
-              variant="ghost"
             >
-              {resolvedTheme === "dark" ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10">
+                {resolvedTheme === "dark" ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}
+              </span>
               {resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
-            </Button>
+            </button>
           </div>
         </aside>
 
-        <main className="min-w-0 flex-1 p-4 md:p-6">
-          <section className="mx-auto max-w-7xl">
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm md:p-6">
-              {activeSection.id === "dashboard" ? (
-                <DashboardScreen />
-              ) : activeSection.id === "contacts" ? (
-                <ContactsScreen />
-              ) : activeSection.id === "sales" ? (
-                <SalesScreen />
-              ) : activeSection.id === "cash" ? (
-                <CashSaleScreen />
-              ) : activeSection.id === "payments" ? (
-                <PaymentsScreen />
-              ) : activeSection.id === "ledger" ? (
-                <LedgerScreen />
-              ) : activeSection.id === "reports" ? (
-                <ReportsScreen />
-              ) : activeSection.id === "settings" ? (
-                <SettingsScreen />
-              ) : (
-                <>
-              <div className="flex items-start gap-4">
-                <div className="rounded-2xl bg-blue-50 dark:bg-blue-950/40 p-3 text-blue-600 dark:text-blue-400">
-                  <ActiveIcon className="h-7 w-7" aria-hidden="true" />
-                </div>
+        <main className="min-w-0 flex-1">
+          <header className="sticky top-0 z-10 border-b border-slate-200/80 bg-slate-100/85 px-4 py-3 backdrop-blur md:px-8 dark:border-slate-800 dark:bg-slate-950/85">
+            <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white shadow-brand">
+                  <ActiveIcon className="h-4 w-4" aria-hidden="true" />
+                </span>
                 <div>
-                  <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Milestone 1 placeholder</p>
-                  <h2 className="mt-1 text-3xl font-bold tracking-tight">{activeSection.label}</h2>
-                  <p className="mt-3 max-w-2xl text-slate-600 dark:text-slate-300">{activeSection.description}</p>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Islamia Printers</div>
+                  <div className="text-base font-bold text-slate-950 dark:text-slate-50">{activeSection.label}</div>
                 </div>
               </div>
-
-              <div className="mt-8 grid gap-4 md:grid-cols-3">
-                {activeCards.map((card) => {
-                  const CardIcon = icons[card.icon];
-
-                  return (
-                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 p-5" key={card.title}>
-                      <CardIcon className="mb-4 h-5 w-5 text-blue-600 dark:text-blue-400" aria-hidden="true" />
-                      <h3 className="font-semibold">{card.title}</h3>
-                      <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{card.description}</p>
-                    </div>
-                  );
-                })}
+              <div className="hidden rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-600 shadow-sm sm:block dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                {todayLabel.format(new Date())}
               </div>
-                </>
-              )}
+            </div>
+          </header>
+
+          <section className="mx-auto max-w-7xl p-4 md:p-8">
+            <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-card md:p-7 dark:border-slate-800 dark:bg-slate-900">
+              <Screen />
             </div>
           </section>
         </main>

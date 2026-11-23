@@ -52,7 +52,7 @@ export default function DocumentPanel({ kicker, title, subtitle, html, fileName,
     <section aria-label={`${kicker} preview`} className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm">
       <div className="flex flex-col gap-3 border-b border-slate-200 dark:border-slate-700 pb-4 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-sm font-medium text-blue-600 dark:text-blue-400">{kicker}</p>
+          <p className="text-sm font-medium text-brand-600 dark:text-brand-400">{kicker}</p>
           <h3 className="mt-1 text-2xl font-bold text-slate-950 dark:text-slate-50">{title}</h3>
           {subtitle ? <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{subtitle}</p> : null}
         </div>

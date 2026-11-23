@@ -257,7 +257,7 @@ export default function SettingsScreen() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Milestone 9 backup and restore</p>
+          <p className="text-sm font-medium text-brand-600 dark:text-brand-400">Milestone 9 backup and restore</p>
           <h2 className="mt-1 text-3xl font-bold tracking-tight">Settings</h2>
           <p className="mt-2 max-w-2xl text-slate-600 dark:text-slate-300">Choose where database backups are saved, create manual backups, and restore from a saved SQLite backup file.</p>
         </div>
@@ -313,12 +313,12 @@ export default function SettingsScreen() {
           {editPasswordStatus.isSet ? (
             <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="current-edit-password">
               Current password
-              <input className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/50" id="current-edit-password" onChange={(event) => setCurrentEditPassword(event.target.value)} type="password" value={currentEditPassword} />
+              <input className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 dark:focus:border-brand-400 focus:ring-2 focus:ring-brand-100 dark:focus:ring-brand-900/50" id="current-edit-password" onChange={(event) => setCurrentEditPassword(event.target.value)} type="password" value={currentEditPassword} />
             </label>
           ) : null}
           <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="new-edit-password">
             {editPasswordStatus.isSet ? "New password" : "Password"}
-            <input className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900/50" id="new-edit-password" onChange={(event) => setNewEditPassword(event.target.value)} type="password" value={newEditPassword} />
+            <input className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 dark:focus:border-brand-400 focus:ring-2 focus:ring-brand-100 dark:focus:ring-brand-900/50" id="new-edit-password" onChange={(event) => setNewEditPassword(event.target.value)} type="password" value={newEditPassword} />
           </label>
         </div>
 
@@ -370,7 +370,7 @@ export default function SettingsScreen() {
               <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="business-name">
                 Business name
                 <input
-                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
                   id="business-name"
                   onChange={(event) => updateBusinessForm({ businessName: event.target.value })}
                   value={businessForm.businessName}
@@ -379,7 +379,7 @@ export default function SettingsScreen() {
               <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="business-phone">
                 Phone
                 <input
-                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
                   id="business-phone"
                   onChange={(event) => updateBusinessForm({ phone: event.target.value })}
                   placeholder="M. Abdul Hafeez | +92 300 0000000; Second name | +92 300 0000000"
@@ -392,7 +392,7 @@ export default function SettingsScreen() {
               <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="business-email">
                 Email
                 <input
-                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
                   id="business-email"
                   onChange={(event) => updateBusinessForm({ email: event.target.value })}
                   value={businessForm.email ?? ""}
@@ -401,7 +401,7 @@ export default function SettingsScreen() {
               <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="currency-symbol">
                 Currency symbol
                 <input
-                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
                   id="currency-symbol"
                   onChange={(event) => updateBusinessForm({ currencySymbol: event.target.value })}
                   value={businessForm.currencySymbol}
@@ -410,7 +410,7 @@ export default function SettingsScreen() {
               <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200 md:col-span-2" htmlFor="business-address">
                 Address
                 <textarea
-                  className="min-h-20 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  className="min-h-20 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
                   id="business-address"
                   onChange={(event) => updateBusinessForm({ address: event.target.value })}
                   value={businessForm.address ?? ""}
@@ -419,7 +419,7 @@ export default function SettingsScreen() {
               <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="invoice-prefix">
                 Invoice prefix
                 <input
-                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
                   id="invoice-prefix"
                   onChange={(event) => updateBusinessForm({ invoicePrefix: event.target.value })}
                   value={businessForm.invoicePrefix}
@@ -444,7 +444,7 @@ export default function SettingsScreen() {
             <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="backup-location">
               Backup folder
               <input
-                className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
                 id="backup-location"
                 onChange={(event) => setBackupLocation(event.target.value)}
                 value={backupLocation}
@@ -473,7 +473,7 @@ export default function SettingsScreen() {
             <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="invoice-folder">
               Invoice folder
               <input
-                className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
                 id="invoice-folder"
                 onChange={(event) => setInvoiceFolder(event.target.value)}
                 value={invoiceFolder}
@@ -516,7 +516,7 @@ export default function SettingsScreen() {
             <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="restore-path">
               Backup file
               <input
-                className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
                 id="restore-path"
                 onChange={(event) => setRestorePath(event.target.value)}
                 value={restorePath}

@@ -169,13 +169,13 @@ export default function ContactsScreen() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Khata accounts</p>
+          <p className="text-sm font-medium text-brand-600 dark:text-brand-400">Khata accounts</p>
           <h2 className="mt-1 text-3xl font-bold tracking-tight">Customers</h2>
           <p className="mt-2 max-w-2xl text-slate-600 dark:text-slate-300">
             Every customer has their own khata. Old udhaar from before this software goes in as the opening balance.
           </p>
         </div>
-        <div className="rounded-2xl bg-blue-50 dark:bg-blue-950/40 px-4 py-3 text-sm text-blue-700">
+        <div className="rounded-2xl bg-brand-50 dark:bg-brand-950/40 px-4 py-3 text-sm text-brand-700">
           <span className="font-semibold">{customers.length}</span> customers
         </div>
       </div>
@@ -203,7 +203,7 @@ export default function ContactsScreen() {
           <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="contact-name">
             Name
             <input
-              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
               id="contact-name"
               onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
               value={form.name}
@@ -213,7 +213,7 @@ export default function ContactsScreen() {
           <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="contact-phone">
             Phone
             <input
-              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
               id="contact-phone"
               onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))}
               value={form.phone}
@@ -223,7 +223,7 @@ export default function ContactsScreen() {
           <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="contact-email">
             Email
             <input
-              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
               id="contact-email"
               onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
               type="email"
@@ -234,7 +234,7 @@ export default function ContactsScreen() {
           <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="contact-address">
             Address
             <input
-              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
               id="contact-address"
               onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))}
               value={form.address}
@@ -244,7 +244,7 @@ export default function ContactsScreen() {
           <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="contact-opening-balance">
             Opening balance
             <input
-              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
               id="contact-opening-balance"
               onChange={(event) => setForm((current) => ({ ...current, openingBalance: event.target.value }))}
               placeholder="0.00"
@@ -261,7 +261,7 @@ export default function ContactsScreen() {
         <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="contact-notes">
           Notes
           <textarea
-            className="min-h-20 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            className="min-h-20 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
             id="contact-notes"
             onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
             value={form.notes}
@@ -279,7 +279,7 @@ export default function ContactsScreen() {
         <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="contact-search">
           Search customers
           <input
-            className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
             id="contact-search"
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Name, phone, email, address, or notes"

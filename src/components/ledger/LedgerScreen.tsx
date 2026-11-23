@@ -179,9 +179,10 @@ export default function LedgerScreen() {
       {error ? <ErrorBanner>{error}</ErrorBanner> : null}
       {message ? <SuccessBanner>{message}</SuccessBanner> : null}
 
-      <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-blue-50 dark:bg-blue-950/40 px-4 py-3">
-        <div className="text-sm text-slate-600 dark:text-slate-300">Total receivable (wusooli baqi)</div>
-        <div className="text-2xl font-bold text-slate-950 dark:text-slate-50">{formatCurrency(summary?.totalReceivableCents ?? 0)}</div>
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-brand-600 to-brand-900 px-5 py-4 text-white shadow-brand">
+        <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-white/10" aria-hidden="true" />
+        <div className="text-xs font-semibold uppercase tracking-wider text-white/75">Total receivable (wusooli baqi)</div>
+        <div className="mt-1 text-3xl font-extrabold tracking-tight">{formatCurrency(summary?.totalReceivableCents ?? 0)}</div>
       </div>
 
       <div className="flex flex-col gap-3 md:flex-row md:items-end">
@@ -223,7 +224,7 @@ export default function LedgerScreen() {
             ) : (
               visibleRows.map((row) => (
                 <tr
-                  className={`cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 ${selectedCustomerId === row.customerId ? "bg-blue-50 dark:bg-blue-950/40" : ""}`}
+                  className={`cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 ${selectedCustomerId === row.customerId ? "bg-brand-50 dark:bg-brand-950/40" : ""}`}
                   key={row.customerId}
                   onClick={() => openCustomer(row.customerId)}
                 >
@@ -234,7 +235,7 @@ export default function LedgerScreen() {
                   <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">{row.openingBalanceCents === 0 ? "-" : formatCurrency(row.openingBalanceCents)}</td>
                   <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">{formatCurrency(row.billedCents)}</td>
                   <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">{formatCurrency(row.receivedCents)}</td>
-                  <td className={`px-4 py-3 text-right font-semibold ${row.balanceCents > 0 ? "text-red-600 dark:text-red-400" : "text-slate-950 dark:text-slate-50"}`}>
+                  <td className={`px-4 py-3 text-right font-semibold ${row.balanceCents > 0 ? "text-brand-700 dark:text-brand-300" : "text-slate-950 dark:text-slate-50"}`}>
                     {formatCurrency(row.balanceCents)}
                   </td>
                   <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{row.lastActivityDate ? formatDate(row.lastActivityDate) : "-"}</td>

@@ -6,7 +6,7 @@ import BillPreview from "@/components/invoices/BillPreview";
 import AdvanceFields, { advanceFromSale, emptyAdvance, readAdvance, type AdvanceForm } from "@/components/sales/AdvanceFields";
 import BillHistory from "@/components/sales/BillHistory";
 import { Button } from "@/components/ui/button";
-import { compactInputClass, ErrorBanner, inputClass, labelClass, ScreenHeader, SuccessBanner } from "@/components/ui/form";
+import { compactInputClass, compactTextInputClass, ErrorBanner, inputClass, labelClass, ScreenHeader, SuccessBanner } from "@/components/ui/form";
 import { formatCurrency } from "@/lib/currency";
 import { formatAmount, formatAmountOrBlank, parseQuantity, parseRupeesToCents, toDayInputValue } from "@/lib/format";
 import { workAmountCents, workKinds, workLabels, type WorkKind } from "@/lib/job-math";
@@ -294,7 +294,7 @@ export default function SalesScreen() {
                     <td className="px-2 py-2 align-top">
                       <input
                         aria-label={`Job ${index + 1} name`}
-                        className={`${compactInputClass} text-left`}
+                        className={compactTextInputClass}
                         onChange={(event) => updateJob(job.key, (current) => ({ ...current, jobName: event.target.value }))}
                         placeholder="e.g. Visiting cards"
                         value={job.jobName}

@@ -41,7 +41,7 @@ export default function AdvanceFields({ idPrefix, totalCents, value, onChange }:
           />
         </label>
         <button
-          className="justify-self-start text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
+          className="justify-self-start text-sm font-medium text-brand-600 hover:underline dark:text-brand-400"
           onClick={() => onChange({ ...value, amount: totalCents > 0 ? String(totalCents / 100) : "" })}
           type="button"
         >
