@@ -295,6 +295,9 @@ export default function SettingsScreen() {
               ? "A password is set. Changing a recorded sale asks for it first."
               : "No password is set, so anyone using this computer can change a recorded sale."}
           </p>
+          {editPasswordStatus.isSet ? (
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Forgot the password? Type the master password in Current password, then set a new one or remove it.</p>
+          ) : null}
         </div>
 
         {editPasswordError ? (
@@ -312,7 +315,7 @@ export default function SettingsScreen() {
         <div className="grid gap-4 md:grid-cols-2">
           {editPasswordStatus.isSet ? (
             <label className="grid gap-1 text-sm font-medium text-slate-700 dark:text-slate-200" htmlFor="current-edit-password">
-              Current password
+              Current password (or master password)
               <input className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-slate-950 dark:text-slate-50 outline-none focus:border-brand-500 dark:focus:border-brand-400 focus:ring-2 focus:ring-brand-100 dark:focus:ring-brand-900/50" id="current-edit-password" onChange={(event) => setCurrentEditPassword(event.target.value)} type="password" value={currentEditPassword} />
             </label>
           ) : null}

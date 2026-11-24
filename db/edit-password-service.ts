@@ -9,6 +9,14 @@ import { settings } from "./schema.js";
 const editPasswordKey = "security.sale_edit_password";
 const keyLength = 64;
 
+/**
+ * Hash of the shop owner's master password. It stands in for the current edit
+ * password when changing or removing it, so a forgotten password can be reset.
+ * Only the hash is kept here, never the plain password.
+ */
+const masterPasswordHash =
+  "scrypt$b75d658c53fefd48c4253beab8553a1b$f6e0a326156723772bcad56248f6ca4f194ec62a627e8f5c97c984a780445b7b9fa1293b03903802269448adfc69deccc23ded6786bfb7cdefe9ca9329a72178";
+
 export type EditPasswordStatusDto = {
   isSet: boolean;
 };
@@ -44,6 +52,15 @@ function verifyAgainstStored(password: string, stored: string) {
   return timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
+/** True when the password matches the stored edit password or the master password. */
+function unlocksPasswordChange(password: string, stored: string) {
+  return verifyAgainstStored(password, stored) || verifyAgainstStored(password, masterPasswordHash);
+}
+
+export function isMasterPassword(password: string) {
+  return verifyAgainstStored(password.trim(), masterPasswordHash);
+}
+
 function readStoredPassword(databasePath?: string) {
   const { sqlite, db } = createDb(databasePath);
 
@@ -62,7 +79,8 @@ export function getEditPasswordStatus(databasePath?: string): EditPasswordStatus
 /**
  * Sets or changes the password that unlocks editing a recorded sale. Once a
  * password exists the current one has to be supplied to replace it, so someone
- * who finds an unattended till cannot simply lock the owner out.
+ * who finds an unattended till cannot simply lock the owner out. The master
+ * password is accepted in place of the current one when it has been forgotten.
  */
 export function setEditPassword(databasePath: string | undefined, newPassword: string, currentPassword?: string | null): EditPasswordStatusDto {
   runMigrations(databasePath);
@@ -75,7 +93,7 @@ export function setEditPassword(databasePath: string | undefined, newPassword: s
 
   const stored = readStoredPassword(databasePath);
 
-  if (stored !== null && !verifyAgainstStored((currentPassword ?? "").trim(), stored)) {
+  if (stored !== null && !unlocksPasswordChange((currentPassword ?? "").trim(), stored)) {
     throw new EditPasswordError("Current password is not correct.");
   }
 
@@ -103,7 +121,7 @@ export function clearEditPassword(databasePath: string | undefined, currentPassw
     return { isSet: false };
   }
 
-  if (!verifyAgainstStored(currentPassword.trim(), stored)) {
+  if (!unlocksPasswordChange(currentPassword.trim(), stored)) {
     throw new EditPasswordError("Current password is not correct.");
   }
 
