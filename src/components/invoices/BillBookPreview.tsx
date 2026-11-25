@@ -18,6 +18,9 @@ type BillBookPreviewProps = {
 };
 
 // Remembered on this PC: the printer and the bill-book pad belong to the machine, not the document.
+/** How far the details can be nudged either way, in millimetres. */
+export const OFFSET_LIMIT_MM = 50;
+
 const modeKey = "islamia.billPrint.mode";
 const offsetKey = "islamia.billPrint.offset";
 
@@ -63,7 +66,7 @@ export default function BillBookPreview({ idPrefix, kicker, title, subtitle, bas
 
   function changeOffset(axis: "x" | "y", value: string) {
     const parsed = Number(value);
-    const next = { ...offset, [axis]: Number.isFinite(parsed) ? Math.max(-20, Math.min(20, parsed)) : 0 };
+    const next = { ...offset, [axis]: Number.isFinite(parsed) ? Math.max(-OFFSET_LIMIT_MM, Math.min(OFFSET_LIMIT_MM, parsed)) : 0 };
     setOffset(next);
     remember(offsetKey, JSON.stringify(next));
   }
@@ -96,11 +99,11 @@ export default function BillBookPreview({ idPrefix, kicker, title, subtitle, bas
         <div className="flex flex-wrap items-end gap-3">
           <label className="grid gap-1 text-xs font-medium text-slate-600 dark:text-slate-300" htmlFor={`${idPrefix}-offset-x`}>
             Right / left (mm)
-            <input className={`${inputClass} w-28`} id={`${idPrefix}-offset-x`} onChange={(event) => changeOffset("x", event.target.value)} step="0.5" type="number" value={offset.x} />
+            <input className={`${inputClass} w-28`} id={`${idPrefix}-offset-x`} max={OFFSET_LIMIT_MM} min={-OFFSET_LIMIT_MM} onChange={(event) => changeOffset("x", event.target.value)} step="0.5" type="number" value={offset.x} />
           </label>
           <label className="grid gap-1 text-xs font-medium text-slate-600 dark:text-slate-300" htmlFor={`${idPrefix}-offset-y`}>
             Down / up (mm)
-            <input className={`${inputClass} w-28`} id={`${idPrefix}-offset-y`} onChange={(event) => changeOffset("y", event.target.value)} step="0.5" type="number" value={offset.y} />
+            <input className={`${inputClass} w-28`} id={`${idPrefix}-offset-y`} max={OFFSET_LIMIT_MM} min={-OFFSET_LIMIT_MM} onChange={(event) => changeOffset("y", event.target.value)} step="0.5" type="number" value={offset.y} />
           </label>
           <p className="max-w-56 text-xs text-slate-500 dark:text-slate-400">Agar likhai boxes se thodi hat kar chhape to yahan adjust karein. Ye setting is PC par yaad rahegi.</p>
         </div>

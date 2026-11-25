@@ -58,4 +58,18 @@ describe("BillPreview", () => {
     expect(screen.getByLabelText(/Sirf detail/)).toBeChecked();
     expect(screen.getByLabelText("Right / left (mm)")).toHaveValue(2);
   });
+
+  it("lets the details move up to 50 mm either way, and no further", () => {
+    render(<BillPreview bill={billDocument()} onClose={() => undefined} />);
+    fireEvent.click(screen.getByLabelText(/Sirf detail/));
+
+    fireEvent.change(screen.getByLabelText("Down / up (mm)"), { target: { value: "-50" } });
+    expect(screen.getByLabelText("Down / up (mm)")).toHaveValue(-50);
+
+    fireEvent.change(screen.getByLabelText("Down / up (mm)"), { target: { value: "-65" } });
+    expect(screen.getByLabelText("Down / up (mm)")).toHaveValue(-50);
+
+    fireEvent.change(screen.getByLabelText("Right / left (mm)"), { target: { value: "50" } });
+    expect(screen.getByLabelText("Right / left (mm)")).toHaveValue(50);
+  });
 });
