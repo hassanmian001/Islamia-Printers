@@ -1,6 +1,6 @@
 {
   "name": "islamia-printers",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "Windows desktop job sales and customer khata software for Islamia Printers.",
   "main": "dist-electron/electron/main.js",
   "productName": "Islamia Printers",
